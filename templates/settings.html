@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Summer Tracker — Settings</title>
+  <title>{{ app_name }} — Settings</title>
   <link rel="stylesheet" href="/static/style.css?v=2">
 </head>
 <body>
@@ -12,8 +12,7 @@
   <header class="admin-bar">
     <h1 class="admin-title">Settings</h1>
     <nav class="admin-nav">
-      <a href="/andrew">Andrew</a>
-      <a href="/daniel">Daniel</a>
+      {% for k in nav_kids %}<a href="/{{ k.slug }}">{{ k.name }}</a>{% endfor %}
       <a href="/admin">Dashboard</a>
       <a href="/status">Status</a>
       <a href="/admin/history">History</a>
@@ -25,6 +24,105 @@
 
   {% if saved %}<div class="saved-banner">Saved ✓</div>{% endif %}
 
+  {# ---- App config ---- #}
+  <h2 class="admin-section-h">App &amp; program</h2>
+  <section class="card">
+    <form method="post" action="/admin/settings/appconfig">
+      <div class="set-row">
+        <label>App name
+          <input type="text" name="app_name" value="{{ app_name_val }}" class="set-text wide" required>
+        </label>
+        <label>Program label (shown as section heading)
+          <input type="text" name="program_label" value="{{ program_label_val }}" class="set-text wide">
+        </label>
+      </div>
+      <div class="set-row">
+        <label>Timezone
+          <input type="text" name="timezone" value="{{ timezone_val }}" class="set-text" placeholder="America/New_York">
+        </label>
+        <span class="set-hint">Use <a href="https://en.wikipedia.org/wiki/List_of_tz_database_time_zones" target="_blank" rel="noopener">tz database name</a> (e.g. America/Chicago, Europe/London)</span>
+      </div>
+      <div class="set-row">
+        <fieldset style="border:none;padding:0;margin:0">
+          <legend style="font-weight:600;margin-bottom:.4rem">Activities tracked</legend>
+          <label style="display:flex;gap:.5rem;align-items:center;margin-bottom:.4rem">
+            <input type="checkbox" name="reading_enabled"{{ ' checked' if reading_enabled_val else '' }}>
+            Enable activity 1:
+            <input type="text" name="reading_label" value="{{ reading_label_val }}" class="set-text" placeholder="Reading">
+          </label>
+          <label style="display:flex;gap:.5rem;align-items:center">
+            <input type="checkbox" name="outdoor_enabled"{{ ' checked' if outdoor_enabled_val else '' }}>
+            Enable activity 2:
+            <input type="text" name="outdoor_label" value="{{ outdoor_label_val }}" class="set-text" placeholder="Outdoor Time">
+          </label>
+        </fieldset>
+      </div>
+      <button class="mini-btn primary" type="submit">Save app settings</button>
+    </form>
+  </section>
+
+  {# ---- Kid management ---- #}
+  <h2 class="admin-section-h">Kids</h2>
+  <section class="card">
+    <table class="chore-table">
+      <tr><th>Name</th><th>URL slug</th><th>Active</th><th>Passphrase</th><th></th></tr>
+      {% for k in all_kids %}
+        <tr>
+          <td>{{ k.name }}</td>
+          <td>/{{ k.url_slug }}</td>
+          <td>{{ "Yes" if k.active else "No" }}</td>
+          <td>{{ "Set" if k.passphrase_hash else "None" }}</td>
+          <td style="display:flex;gap:.4rem;flex-wrap:wrap">
+            <button class="mini-btn" type="button" onclick="toggleEdit('kid-{{ k.id }}')">Edit</button>
+            <button class="mini-btn" type="button" onclick="toggleEdit('pw-{{ k.id }}')">Passphrase</button>
+            {% if k.active %}
+              <form method="post" action="/admin/kid/deactivate" class="inline-form">
+                <input type="hidden" name="kid_id" value="{{ k.id }}">
+                <button class="mini-btn danger" onclick="return confirm('Deactivate {{ k.name }}?')">Deactivate</button>
+              </form>
+            {% else %}
+              <form method="post" action="/admin/kid/activate" class="inline-form">
+                <input type="hidden" name="kid_id" value="{{ k.id }}">
+                <button class="mini-btn">Activate</button>
+              </form>
+            {% endif %}
+          </td>
+        </tr>
+        <tr id="kid-{{ k.id }}" class="edit-row" hidden>
+          <td colspan="5">
+            <form method="post" action="/admin/kid/rename" class="add-form">
+              <input type="hidden" name="kid_id" value="{{ k.id }}">
+              <input type="text" name="name" value="{{ k.name }}" class="add-name" placeholder="Name" required>
+              <input type="text" name="slug" value="{{ k.url_slug }}" class="set-text" placeholder="url-slug" pattern="[a-z0-9_-]+" required>
+              <button class="mini-btn primary" type="submit">Save</button>
+              <button class="mini-btn" type="button" onclick="toggleEdit('kid-{{ k.id }}')">Cancel</button>
+            </form>
+          </td>
+        </tr>
+        <tr id="pw-{{ k.id }}" class="edit-row" hidden>
+          <td colspan="5">
+            <form method="post" action="/admin/kid/passphrase" class="add-form">
+              <input type="hidden" name="kid_id" value="{{ k.id }}">
+              <input type="text" name="passphrase" class="set-text wide" placeholder="New passphrase (blank to remove)">
+              <button class="mini-btn primary" type="submit">Set passphrase</button>
+              <button class="mini-btn" type="button" onclick="toggleEdit('pw-{{ k.id }}')">Cancel</button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+    </table>
+    <div style="margin-top:1rem">
+      <strong>Add kid</strong>
+      <form method="post" action="/admin/kid/add" class="add-form" style="margin-top:.4rem">
+        <input type="text" name="name" placeholder="Name" class="add-name" required>
+        <input type="text" name="slug" placeholder="url-slug (e.g. alex)" class="set-text"
+               pattern="[a-z0-9_-]+" required>
+        <button class="mini-btn primary" type="submit">Add kid</button>
+      </form>
+    </div>
+    <div class="set-hint">URL slug must be lowercase letters, numbers, hyphens, underscores.</div>
+  </section>
+
   {# ---- Per-kid targets ---- #}
   <h2 class="admin-section-h">Weekly targets</h2>
   <section class="card">
@@ -32,12 +130,16 @@
       {% for k in kids %}
         <div class="set-row">
           <span class="set-name">{{ k.name }}</span>
-          <label>Reading (min)
+          {% if reading_enabled %}
+          <label>{{ reading_label }} (min)
             <input type="number" name="reading_{{ k.id }}" value="{{ k.reading_target }}" min="1" class="set-num">
           </label>
-          <label>Outdoor (min)
+          {% endif %}
+          {% if outdoor_enabled %}
+          <label>{{ outdoor_label }} (min)
             <input type="number" name="outdoor_{{ k.id }}" value="{{ k.outdoor_target }}" min="1" class="set-num">
           </label>
+          {% endif %}
         </div>
       {% endfor %}
       <button class="mini-btn primary" type="submit">Save targets</button>
@@ -57,7 +159,7 @@
         <label>Program start (YYYY-MM-DD)
           <input type="text" name="program_start" value="{{ program_start }}" class="set-text">
         </label>
-        <label>Program end (YYYY-MM-DD)
+        <label>Program end (YYYY-MM-DD, blank for ongoing)
           <input type="text" name="program_end" value="{{ program_end }}" class="set-text">
         </label>
       </div>
@@ -71,14 +173,14 @@
   </section>
 
   {# ---- Special periods ---- #}
-  <h2 class="admin-section-h">Vacations &amp; camp</h2>
+  <h2 class="admin-section-h">Vacations &amp; special periods</h2>
   <section class="card">
     <table class="chore-table">
-      <tr><th>Label</th><th>Type</th><th>Start</th><th>End</th><th>Outdoor/day</th><th></th><th></th></tr>
+      <tr><th>Label</th><th>Type</th><th>Start</th><th>End</th><th>{{ outdoor_label }}/day</th><th></th><th></th></tr>
       {% for sp in specials %}
         <tr>
           <td>{{ sp.label }}</td>
-          <td>{{ 'Paused' if sp.type == 'paused' else 'Outdoor credit' }}</td>
+          <td>{{ 'Paused' if sp.type == 'paused' else outdoor_label + ' credit' }}</td>
           <td>{{ sp.start_date }}</td>
           <td>{{ sp.end_date }}</td>
           <td>{{ sp.outdoor_minutes_per_day if sp.outdoor_minutes_per_day is not none else '—' }}</td>
@@ -98,7 +200,7 @@
               <input type="text" name="label" value="{{ sp.label }}" class="add-name" required>
               <select name="type" class="add-type">
                 <option value="paused"{{ ' selected' if sp.type == 'paused' else '' }}>Paused</option>
-                <option value="outdoor_credit"{{ ' selected' if sp.type == 'outdoor_credit' else '' }}>Outdoor credit</option>
+                <option value="outdoor_credit"{{ ' selected' if sp.type == 'outdoor_credit' else '' }}>{{ outdoor_label }} credit</option>
               </select>
               <input type="text" name="start_date" value="{{ sp.start_date }}" class="set-text" placeholder="start">
               <input type="text" name="end_date" value="{{ sp.end_date }}" class="set-text" placeholder="end">
@@ -111,35 +213,49 @@
       {% endfor %}
     </table>
     <form method="post" action="/admin/special/add" class="add-form">
-      <input type="text" name="label" placeholder="Label (e.g. Alaska cruise)" class="add-name" required>
+      <input type="text" name="label" placeholder="Label (e.g. Summer vacation)" class="add-name" required>
       <select name="type" class="add-type">
         <option value="paused">Paused</option>
-        <option value="outdoor_credit">Outdoor credit</option>
+        <option value="outdoor_credit">{{ outdoor_label }} credit</option>
       </select>
-      <input type="text" name="start_date" placeholder="2026-07-03" class="set-text">
-      <input type="text" name="end_date" placeholder="2026-07-14" class="set-text">
+      <input type="text" name="start_date" placeholder="YYYY-MM-DD" class="set-text">
+      <input type="text" name="end_date" placeholder="YYYY-MM-DD" class="set-text">
       <input type="number" name="outdoor_minutes_per_day" placeholder="min/day" class="set-num">
       <button class="mini-btn primary" type="submit">Add period</button>
     </form>
-    <div class="set-hint">"Paused" weeks don't count toward goals or streaks. "Outdoor credit" auto-adds the given minutes each camp weekday.</div>
+    <div class="set-hint">"Paused" weeks don't count toward goals or streaks. "{{ outdoor_label }} credit" auto-adds the given minutes each camp weekday.</div>
   </section>
 
-  {# ---- Pushover ---- #}
-  <h2 class="admin-section-h">Pushover</h2>
+  {# ---- Notifications (Apprise) ---- #}
+  <h2 class="admin-section-h">Notifications</h2>
   <section class="card">
-    <form method="post" action="/admin/settings/pushover">
+    <form method="post" action="/admin/settings/notify">
       <div class="set-row">
-        <label>App token
-          <input type="text" name="pushover_app" value="{{ pushover_app }}" class="set-text wide">
+        <label style="flex:1">Apprise URLs (one per line)
+          <textarea name="notify_urls" class="set-text wide" rows="5"
+                    placeholder="pover://AppToken/UserKey&#10;tgram://BotToken/ChatID&#10;slack://TokenA/TokenB/TokenC">{{ notify_urls }}</textarea>
         </label>
       </div>
-      <div class="set-row">
-        <label>User key
-          <input type="text" name="pushover_user" value="{{ pushover_user }}" class="set-text wide">
+      <div class="set-hint">
+        Apprise supports 80+ services — Pushover, Telegram, Slack, Discord, ntfy, email, and more.
+        Format: <code>pover://app_token/user_key</code>, <code>tgram://bottoken/chatid</code>, <code>ntfy://topic</code>.
+        See <a href="https://github.com/caronc/apprise/wiki" target="_blank" rel="noopener">Apprise wiki</a> for all URL formats.
+      </div>
+      <div class="set-row" style="margin-top:.75rem">
+        <label style="display:flex;gap:.5rem;align-items:center">
+          <input type="checkbox" name="passphrase_required"{{ ' checked' if passphrase_required_val else '' }}>
+          Require passphrase for kid pages (when a passphrase is set on a kid)
         </label>
       </div>
-      <button class="mini-btn primary" type="submit">Save Pushover</button>
+      <button class="mini-btn primary" type="submit">Save notifications</button>
     </form>
+  </section>
+
+  {# ---- Data export ---- #}
+  <h2 class="admin-section-h">Data export</h2>
+  <section class="card">
+    <a href="/admin/export" class="mini-btn primary">Download JSON export</a>
+    <span class="set-hint" style="margin-left:.75rem">Exports all data (kids, chores, logs, settings) as JSON.</span>
   </section>
 
   {# ---- Password ---- #}
@@ -157,7 +273,7 @@
 </div>
 <script>
 function toggleEdit(id) {
-  var row = document.getElementById("edit-" + id);
+  var row = document.getElementById("edit-" + id) || document.getElementById(String(id));
   if (row) { row.hidden = !row.hidden; }
 }
 </script>

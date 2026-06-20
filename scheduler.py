@@ -63,14 +63,15 @@ def maybe_morning_reminder(conn, now, d):
     t = _parse_hhmm(rt)
     if t is None or now.time() < t:
         return
+    app_name = logic.get_setting(conn, "app_name", "Family Tracker")
     for kid in logic.active_kids(conn):
         if not logic.assigned_daily_chores(conn, kid["id"], d):
             continue                            # this kid has no daily chores -> skip
         done, _ = logic.checklist_status(conn, kid["id"], d)
         if done:
             continue
-        notify.send_once(conn, kid["id"], "morning_reminder", "Chore Tracker 🔔",
-                         "%s hasn't finished his checklist yet." % kid["name"], d)
+        notify.send_once(conn, kid["id"], "morning_reminder", "%s 🔔" % app_name,
+                         "%s hasn't finished their checklist yet." % kid["name"], d)
 
 
 def maybe_sunday_summary(conn, now, d):
@@ -79,7 +80,8 @@ def maybe_sunday_summary(conn, now, d):
         return
     if logic.is_paused(conn, d):                # paused week -> no summary
         return
-    notify.send_once(conn, HOUSEHOLD, "weekly_summary", "Chore Tracker — Week Summary",
+    app_name = logic.get_setting(conn, "app_name", "Family Tracker")
+    notify.send_once(conn, HOUSEHOLD, "weekly_summary", "%s — Week Summary" % app_name,
                      build_summary(conn, d), d)
 
 
@@ -88,6 +90,7 @@ def maybe_scheduled_due(conn, now, d):
     if now.hour < 17:                            # give them the day; nudge in the evening
         return
     ws = logic.week_start(d)
+    app_name = logic.get_setting(conn, "app_name", "Family Tracker")
     for ch in conn.execute(
             "SELECT * FROM chores WHERE type='scheduled' AND active=1").fetchall():
         if ch["due_weekday"] != d.weekday():
@@ -99,7 +102,7 @@ def maybe_scheduled_due(conn, now, d):
             if st["state"] in ("due_today", "overdue"):
                 label = " (%s)" % ch["due_label"] if ch["due_label"] else ""
                 notify.send_once(
-                    conn, kid["id"], "scheduled_due:%d" % ch["id"], "Chore Tracker 🔔",
+                    conn, kid["id"], "scheduled_due:%d" % ch["id"], "%s 🔔" % app_name,
                     "Reminder: %s — %s%s is due tonight." % (kid["name"], ch["name"], label),
                     d)
 
@@ -153,7 +156,12 @@ def _safe_tick(env):
 def start(env=None):
     """Start the minute-interval background scheduler. Call once, in the server."""
     from apscheduler.schedulers.background import BackgroundScheduler
-    sched = BackgroundScheduler(timezone=logic.get_tz(env))
+    conn = db.connect()
+    try:
+        tz = logic.get_tz(env=env, conn=conn)
+    finally:
+        conn.close()
+    sched = BackgroundScheduler(timezone=tz)
     sched.add_job(lambda: _safe_tick(env), "interval", minutes=1,
                   id="tick", max_instances=1, coalesce=True)
     sched.start()

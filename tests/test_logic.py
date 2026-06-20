@@ -16,13 +16,13 @@ import scheduler   # noqa: E402
 
 NY = ZoneInfo("America/New_York")
 
-ENV = {"TZ": "America/New_York", "ADMIN_PASSWORD": "x",
-       "PUSHOVER_APP_TOKEN": "", "PUSHOVER_USER_KEY": ""}
+ENV = {"TZ": "America/New_York", "ADMIN_PASSWORD": "x"}
 
 
 def fresh_db():
     conn = db.connect(":memory:")
     db.init_db(conn, ENV)
+    db.seed_test_data(conn, ENV)
     return conn
 
 

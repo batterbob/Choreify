@@ -90,6 +90,35 @@ _KID_PATHS = set()  # filled after we know the slugs (below)
 
 
 # --------------------------------------------------------------------------- #
+# Global template context (injected into every render_template call)
+# --------------------------------------------------------------------------- #
+@app.context_processor
+def inject_globals():
+    conn = get_db()
+    g_set = lambda key, default: logic.get_setting(conn, key, default)
+    return {
+        "app_name": g_set("app_name", "Family Tracker"),
+        "program_label": g_set("program_label", "Activity Tracker"),
+        "reading_label": g_set("reading_label", "Reading"),
+        "reading_enabled": g_set("reading_enabled", "1") != "0",
+        "outdoor_label": g_set("outdoor_label", "Outdoor Time"),
+        "outdoor_enabled": g_set("outdoor_enabled", "1") != "0",
+        "nav_kids": [{"name": k["name"], "slug": k["url_slug"]}
+                     for k in logic.active_kids(conn)],
+    }
+
+
+# --------------------------------------------------------------------------- #
+# First-run detection
+# --------------------------------------------------------------------------- #
+def is_first_run(conn):
+    """True when setup hasn't been completed and no kids exist yet."""
+    if logic.get_setting(conn, "setup_complete", "0") == "1":
+        return False
+    return len(logic.active_kids(conn)) == 0
+
+
+# --------------------------------------------------------------------------- #
 # Shared view-model builders (reused by the page render and the JSON APIs)
 # --------------------------------------------------------------------------- #
 def _fmt_hm(mins):
@@ -325,19 +354,29 @@ def _valid_time(s):
 
 
 def settings_view(conn):
-    kids = [{"id": k["id"], "name": k["name"],
+    kids = [{"id": k["id"], "name": k["name"], "slug": k["url_slug"],
              "reading_target": k["reading_target_minutes"],
-             "outdoor_target": k["outdoor_target_minutes"]}
+             "outdoor_target": k["outdoor_target_minutes"],
+             "has_passphrase": bool(k["passphrase_hash"])}
             for k in logic.active_kids(conn)]
+    all_kids = conn.execute("SELECT * FROM kids ORDER BY id").fetchall()
     g = lambda key, default="": logic.get_setting(conn, key, default)
     return {
         "kids": kids,
+        "all_kids": [dict(k) for k in all_kids],
+        "app_name_val": g("app_name", "Family Tracker"),
+        "program_label_val": g("program_label", "Activity Tracker"),
+        "reading_label_val": g("reading_label", "Reading"),
+        "reading_enabled_val": g("reading_enabled", "1") != "0",
+        "outdoor_label_val": g("outdoor_label", "Outdoor Time"),
+        "outdoor_enabled_val": g("outdoor_enabled", "1") != "0",
+        "timezone_val": g("timezone", "America/New_York"),
         "reminder_time": g("reminder_time", "10:00"),
         "program_start": g("program_start_date", ""),
         "program_end": g("program_end_date", ""),
         "reward": g("scoreboard_reward_text", ""),
-        "pushover_app": g("pushover_app_token", ""),
-        "pushover_user": g("pushover_user_key", ""),
+        "notify_urls": g("notify_urls", ""),
+        "passphrase_required_val": g("passphrase_required", "0") == "1",
         "specials": [dict(r) for r in logic.special_periods(conn)],
         "saved": request.args.get("saved"),
         "pwerror": request.args.get("pwerror"),
@@ -430,8 +469,13 @@ def logs_view(conn, d):
 # --------------------------------------------------------------------------- #
 @app.route("/")
 def index():
-    return ("Chore Tracker. Kid pages: /andrew, /daniel. "
-            "Parent pages coming soon."), 200
+    conn = get_db()
+    if is_first_run(conn):
+        return redirect("/setup")
+    kids = logic.active_kids(conn)
+    if kids:
+        return redirect("/" + kids[0]["url_slug"])
+    return redirect("/admin")
 
 
 @app.route("/healthz")
@@ -800,7 +844,7 @@ def admin_settings_general():
     for field, key in (("program_start", "program_start_date"),
                        ("program_end", "program_end_date")):
         val = (request.form.get(field) or "").strip()
-        if _valid_date(val):
+        if _valid_date(val) or val == "":
             logic.set_setting(conn, key, val)
     logic.set_setting(conn, "scoreboard_reward_text",
                       (request.form.get("reward") or "").strip())
@@ -808,14 +852,33 @@ def admin_settings_general():
     return redirect("/admin/settings?saved=1")
 
 
-@app.route("/admin/settings/pushover", methods=["POST"])
+@app.route("/admin/settings/appconfig", methods=["POST"])
 @require_admin
-def admin_settings_pushover():
+def admin_settings_appconfig():
     conn = get_db()
-    logic.set_setting(conn, "pushover_app_token",
-                      (request.form.get("pushover_app") or "").strip())
-    logic.set_setting(conn, "pushover_user_key",
-                      (request.form.get("pushover_user") or "").strip())
+    for key, form_key in (("app_name", "app_name"), ("program_label", "program_label"),
+                          ("reading_label", "reading_label"),
+                          ("outdoor_label", "outdoor_label"),
+                          ("timezone", "timezone")):
+        val = (request.form.get(form_key) or "").strip()
+        if val:
+            logic.set_setting(conn, key, val)
+    logic.set_setting(conn, "reading_enabled",
+                      "1" if request.form.get("reading_enabled") else "0")
+    logic.set_setting(conn, "outdoor_enabled",
+                      "1" if request.form.get("outdoor_enabled") else "0")
+    conn.commit()
+    return redirect("/admin/settings?saved=1")
+
+
+@app.route("/admin/settings/notify", methods=["POST"])
+@require_admin
+def admin_settings_notify():
+    conn = get_db()
+    logic.set_setting(conn, "notify_urls",
+                      (request.form.get("notify_urls") or "").strip())
+    logic.set_setting(conn, "passphrase_required",
+                      "1" if request.form.get("passphrase_required") else "0")
     conn.commit()
     return redirect("/admin/settings?saved=1")
 
@@ -955,6 +1018,10 @@ def kid_page(slug):
     kid = logic.kid_by_slug(conn, slug)
     if kid is None:
         abort(404)
+    passphrase_required = logic.get_setting(conn, "passphrase_required", "0") == "1"
+    if passphrase_required and kid["passphrase_hash"]:
+        if not session.get("kid_auth_" + slug):
+            return redirect("/login/" + slug)
     d = effective_today()
     return render_template("kid.html", **kid_view(conn, kid, d))
 
@@ -970,8 +1037,9 @@ def _maybe_reinstate_bonus(conn, kid, d):
     """After any kid action on Monday, see if the make-up bonus is now earned."""
     row = logic.check_makeup_reinstatement(conn, kid["id"], d)
     if row is not None:
-        notify.send(conn, "Chore Tracker",
-                    "%s earned his bonus back!" % kid["name"])
+        app_name = logic.get_setting(conn, "app_name", "Family Tracker")
+        notify.send(conn, app_name,
+                    "%s earned their bonus back!" % kid["name"])
         return True
     return False
 
@@ -996,7 +1064,8 @@ def api_chore_complete():
             conn.execute("UPDATE as_needed_assignments SET completed_at=? WHERE id=?",
                          (logic.now_iso(), row["id"]))
             conn.commit()
-            notify.send(conn, "Chore Tracker",
+            app_name = logic.get_setting(conn, "app_name", "Family Tracker")
+            notify.send(conn, app_name,
                         "%s completed: %s" % (kid["name"], row["name"]))
         return jsonify({"ok": True})
 
@@ -1019,8 +1088,9 @@ def api_chore_complete():
     if ctype in ("daily", "alternate_daily"):
         done, _ = logic.checklist_status(conn, kid["id"], d)
         if done:
-            notify.send_once(conn, kid["id"], "daily_complete", "Chore Tracker ✓",
-                             "%s finished his daily checklist!" % kid["name"], d)
+            app_name = logic.get_setting(conn, "app_name", "Family Tracker")
+            notify.send_once(conn, kid["id"], "daily_complete", "%s ✓" % app_name,
+                             "%s finished their daily checklist!" % kid["name"], d)
     reinstated = _maybe_reinstate_bonus(conn, kid, d)
     return jsonify({"ok": True, "checklist_done": done, "bonus_reinstated": reinstated})
 
@@ -1070,6 +1140,160 @@ def api_log_remove():
         % table, (data.get("id"), kid["id"], logic.d2s(d)))
     conn.commit()
     return jsonify(log_section(conn, kid, kind, d))
+
+
+# ---- Kid management ---------------------------------------------------- #
+_SLUG_RE = re.compile(r"^[a-z0-9_-]{1,40}$")
+
+
+@app.route("/admin/kid/add", methods=["POST"])
+@require_admin
+def admin_kid_add():
+    conn = get_db()
+    name = (request.form.get("name") or "").strip()
+    slug = (request.form.get("slug") or "").strip().lower()
+    if name and slug and _SLUG_RE.match(slug):
+        try:
+            conn.execute(
+                "INSERT INTO kids (name, url_slug, active, created_at) VALUES (?,?,1,?)",
+                (name, slug, logic.now_iso()))
+            conn.commit()
+        except Exception:
+            pass  # duplicate slug
+    return redirect("/admin/settings?saved=1")
+
+
+@app.route("/admin/kid/rename", methods=["POST"])
+@require_admin
+def admin_kid_rename():
+    conn = get_db()
+    kid_id = request.form.get("kid_id")
+    name = (request.form.get("name") or "").strip()
+    slug = (request.form.get("slug") or "").strip().lower()
+    if name and slug and _SLUG_RE.match(slug):
+        try:
+            conn.execute("UPDATE kids SET name=?, url_slug=? WHERE id=?",
+                         (name, slug, kid_id))
+            conn.commit()
+        except Exception:
+            pass  # duplicate slug
+    return redirect("/admin/settings?saved=1")
+
+
+@app.route("/admin/kid/deactivate", methods=["POST"])
+@require_admin
+def admin_kid_deactivate():
+    conn = get_db()
+    kid_id = request.form.get("kid_id")
+    conn.execute("UPDATE kids SET active=0 WHERE id=?", (kid_id,))
+    conn.commit()
+    return redirect("/admin/settings?saved=1")
+
+
+@app.route("/admin/kid/activate", methods=["POST"])
+@require_admin
+def admin_kid_activate():
+    conn = get_db()
+    kid_id = request.form.get("kid_id")
+    conn.execute("UPDATE kids SET active=1 WHERE id=?", (kid_id,))
+    conn.commit()
+    return redirect("/admin/settings?saved=1")
+
+
+@app.route("/admin/kid/passphrase", methods=["POST"])
+@require_admin
+def admin_kid_passphrase():
+    conn = get_db()
+    kid_id = request.form.get("kid_id")
+    passphrase = (request.form.get("passphrase") or "").strip()
+    if passphrase:
+        conn.execute("UPDATE kids SET passphrase_hash=? WHERE id=?",
+                     (db.hash_password(passphrase), kid_id))
+    else:
+        conn.execute("UPDATE kids SET passphrase_hash=NULL WHERE id=?", (kid_id,))
+    conn.commit()
+    return redirect("/admin/settings?saved=1")
+
+
+# ---- Per-kid passphrase login ------------------------------------------ #
+@app.route("/login/<slug>", methods=["GET", "POST"])
+def kid_login(slug):
+    conn = get_db()
+    kid = logic.kid_by_slug(conn, slug)
+    if kid is None:
+        abort(404)
+    if not kid["passphrase_hash"]:
+        return redirect("/" + slug)
+    if request.method == "POST":
+        entered = (request.form.get("passphrase") or "").strip()
+        if db.verify_password(kid["passphrase_hash"], entered):
+            session["kid_auth_" + slug] = True
+            return redirect("/" + slug)
+        return render_template("kid_login.html", kid=kid, error="Incorrect passphrase.")
+    return render_template("kid_login.html", kid=kid, error=None)
+
+
+# ---- Setup wizard -------------------------------------------------------- #
+@app.route("/setup", methods=["GET", "POST"])
+def setup_wizard():
+    conn = get_db()
+    if not is_first_run(conn):
+        return redirect("/admin")
+    if request.method == "POST":
+        app_name = (request.form.get("app_name") or "Family Tracker").strip()
+        tz = (request.form.get("timezone") or "America/New_York").strip()
+        password = (request.form.get("password") or "").strip()
+        logic.set_setting(conn, "app_name", app_name)
+        logic.set_setting(conn, "program_label",
+                          (request.form.get("program_label") or "Activity Tracker").strip())
+        logic.set_setting(conn, "timezone", tz)
+        if password:
+            logic.set_setting(conn, "admin_password_hash", db.hash_password(password))
+        # Add kids from form (up to 4)
+        for i in range(1, 5):
+            name = (request.form.get("kid%d_name" % i) or "").strip()
+            slug = (request.form.get("kid%d_slug" % i) or "").strip().lower()
+            if name and slug and _SLUG_RE.match(slug):
+                try:
+                    conn.execute(
+                        "INSERT INTO kids (name, url_slug, active, created_at) VALUES (?,?,1,?)",
+                        (name, slug, logic.now_iso()))
+                except Exception:
+                    pass  # duplicate slug
+        logic.set_setting(conn, "setup_complete", "1")
+        conn.commit()
+        session["admin"] = True
+        return redirect("/admin")
+    common_tz = [
+        "America/New_York", "America/Chicago", "America/Denver",
+        "America/Los_Angeles", "America/Anchorage", "Pacific/Honolulu",
+        "Europe/London", "Europe/Paris", "Europe/Berlin", "Asia/Tokyo",
+        "Asia/Shanghai", "Australia/Sydney",
+    ]
+    return render_template("setup.html", common_tz=common_tz)
+
+
+# ---- Data export --------------------------------------------------------- #
+@app.route("/admin/export")
+@require_admin
+def admin_export():
+    import json as _json
+    conn = get_db()
+    tables = ["kids", "chores", "chore_completions", "as_needed_assignments",
+              "weekly_assignments", "rotating_chore_assignments", "reading_logs",
+              "outdoor_logs", "settings", "notifications_sent", "weekly_results",
+              "special_periods", "makeup_owed"]
+    data = {}
+    for t in tables:
+        try:
+            rows = conn.execute("SELECT * FROM %s" % t).fetchall()
+            data[t] = [dict(r) for r in rows]
+        except Exception:
+            data[t] = []
+    from flask import Response
+    payload = _json.dumps(data, indent=2, default=str)
+    return Response(payload, mimetype="application/json",
+                    headers={"Content-Disposition": "attachment; filename=family_tracker_export.json"})
 
 
 # Populate kid paths for the no-store filter now that the DB is seeded.

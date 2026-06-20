@@ -15,7 +15,14 @@ DATE_FMT = "%Y-%m-%d"
 # --------------------------------------------------------------------------- #
 # Time helpers — local time only, never UTC.
 # --------------------------------------------------------------------------- #
-def get_tz(env=None):
+def get_tz(env=None, conn=None):
+    if conn is not None:
+        tz_name = get_setting(conn, "timezone", None)
+        if tz_name:
+            try:
+                return ZoneInfo(tz_name)
+            except Exception:
+                pass
     env = env if env is not None else os.environ
     return ZoneInfo(env.get("TZ", "America/New_York"))
 
@@ -484,12 +491,12 @@ def rotating_chore_for_kid(conn, kid_id, ws):
     return row["name"] if row else None
 
 
-def _other_kid(kids, kid_id):
-    """The other of two kids; falls back to the same id if only one."""
-    for k in kids:
-        if k["id"] != kid_id:
-            return k["id"]
-    return kid_id
+def _next_kid(kids, kid_id):
+    """Next kid in the ordered list after kid_id; wraps around for N kids."""
+    for i, k in enumerate(kids):
+        if k["id"] == kid_id:
+            return kids[(i + 1) % len(kids)]["id"]
+    return kids[0]["id"] if kids else kid_id
 
 
 def ensure_rotation_for_week(conn, d):
@@ -527,7 +534,7 @@ def ensure_rotation_for_week(conn, d):
             prow = conn.execute(
                 "SELECT kid_id FROM rotating_chore_assignments "
                 "WHERE chore_id=? AND week_start_date=?", (ch, d2s(prev))).fetchone()
-            kid_id = _other_kid(kids, prow["kid_id"]) if prow else kids[0]["id"]
+            kid_id = _next_kid(kids, prow["kid_id"]) if prow else kids[0]["id"]
             conn.execute(
                 "INSERT OR IGNORE INTO rotating_chore_assignments "
                 "(chore_id, kid_id, week_start_date, is_override) VALUES (?,?,?,0)",
@@ -559,7 +566,7 @@ def swap_rotation_this_week(conn, d):
             "WHERE week_start_date=?", (d2s(ws),)).fetchall():
         conn.execute(
             "UPDATE rotating_chore_assignments SET kid_id=?, is_override=1 WHERE id=?",
-            (_other_kid(kids, r["kid_id"]), r["id"]))
+            (_next_kid(kids, r["kid_id"]), r["id"]))
     conn.commit()
 
 
@@ -575,7 +582,7 @@ def swap_rotation_for_chore(conn, chore_id, d):
     if row:
         conn.execute(
             "UPDATE rotating_chore_assignments SET kid_id=?, is_override=1 WHERE id=?",
-            (_other_kid(kids, row["kid_id"]), row["id"]))
+            (_next_kid(kids, row["kid_id"]), row["id"]))
         conn.commit()
 
 
@@ -616,6 +623,19 @@ def finalize_past_weeks(conn, d, env=None):
     conn.commit()
 
 
+def _bonus_earned(conn, r_sum, o_sum, targets):
+    """True when the kid has met all enabled activity targets."""
+    r_enabled = get_setting(conn, "reading_enabled", "1") != "0"
+    o_enabled = get_setting(conn, "outdoor_enabled", "1") != "0"
+    if not r_enabled and not o_enabled:
+        return True  # no activities configured → bonus always earned
+    if r_enabled and r_sum < targets["reading"]:
+        return False
+    if o_enabled and o_sum < targets["outdoor"]:
+        return False
+    return True
+
+
 def _finalize_week_for_kid(conn, kid, ws):
     exists = conn.execute(
         "SELECT 1 FROM weekly_results WHERE kid_id=? AND week_start_date=?",
@@ -637,7 +657,7 @@ def _finalize_week_for_kid(conn, kid, ws):
             (kid["id"], d2s(ws), r_sum, o_sum, now_iso()))
         return
 
-    bonus = r_sum >= targets["reading"] and o_sum >= targets["outdoor"]
+    bonus = _bonus_earned(conn, r_sum, o_sum, targets)
     conn.execute(
         "INSERT OR IGNORE INTO weekly_results (kid_id, week_start_date, "
         "reading_minutes, outdoor_minutes, reading_target, outdoor_target, "

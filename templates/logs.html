@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Summer Tracker — Logs</title>
+  <title>{{ app_name }} — Logs</title>
   <link rel="stylesheet" href="/static/style.css?v=2">
 </head>
 <body>
@@ -16,8 +16,7 @@
       <div class="today-date">Week of {{ week_label }}</div>
     </div>
     <nav class="admin-nav">
-      <a href="/andrew">Andrew</a>
-      <a href="/daniel">Daniel</a>
+      {% for k in nav_kids %}<a href="/{{ k.slug }}">{{ k.name }}</a>{% endfor %}
       <a href="/admin">Dashboard</a>
       <a href="/status">Status</a>
       <a href="/admin/history">History</a>
@@ -27,15 +26,15 @@
     </nav>
   </header>
 
-  <div class="set-hint">Fix this week's reading/outdoor entries. Camp auto-credit is shown but not editable.</div>
+  <div class="set-hint">Fix this week's activity entries. Camp auto-credit is shown but not editable.</div>
 
   <div class="status-grid">
     {% for k in kids %}
       <section class="card">
         <h2 class="status-name">{{ k.name }}</h2>
 
-        {% for kind in ['reading', 'outdoor'] %}
-          <div class="status-sub">{{ 'Reading' if kind == 'reading' else 'Outdoor' }}</div>
+        {% for kind in (['reading'] if reading_enabled else []) + (['outdoor'] if outdoor_enabled else []) %}
+          <div class="status-sub">{{ reading_label if kind == 'reading' else outdoor_label }}</div>
           {% set entries = k.reading if kind == 'reading' else k.outdoor %}
           {% if entries %}
             {% for e in entries %}

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Summer Tracker — History</title>
+  <title>{{ app_name }} — History</title>
   <link rel="stylesheet" href="/static/style.css?v=2">
 </head>
 <body>
@@ -12,8 +12,7 @@
   <header class="admin-bar">
     <h1 class="admin-title">History</h1>
     <nav class="admin-nav">
-      <a href="/andrew">Andrew</a>
-      <a href="/daniel">Daniel</a>
+      {% for k in nav_kids %}<a href="/{{ k.slug }}">{{ k.name }}</a>{% endfor %}
       <a href="/admin">Dashboard</a>
       <a href="/status">Status</a>
       <a href="/admin/history">History</a>
@@ -73,10 +72,10 @@
               <div class="status-line status-break">On break — week didn't count</div>
             {% else %}
               <div class="status-line">Checklist: <strong>{{ k.checklist_days }}/{{ k.checklist_active }} days</strong></div>
-              <div class="status-line">Reading: {{ k.reading }}/{{ k.reading_target }} min
-                {{ '✓' if k.reading_met else '✗' }}</div>
-              <div class="status-line">Outdoor: {{ k.outdoor_hm }}/{{ k.outdoor_target_hm }}
-                {{ '✓' if k.outdoor_met else '✗' }}</div>
+              {% if reading_enabled %}<div class="status-line">{{ reading_label }}: {{ k.reading }}/{{ k.reading_target }} min
+                {{ '✓' if k.reading_met else '✗' }}</div>{% endif %}
+              {% if outdoor_enabled %}<div class="status-line">{{ outdoor_label }}: {{ k.outdoor_hm }}/{{ k.outdoor_target_hm }}
+                {{ '✓' if k.outdoor_met else '✗' }}</div>{% endif %}
               <div class="status-line {{ 'status-good' if k.bonus else 'status-bad' }}">
                 Bonus: {{ 'earned ✓' if k.bonus else 'not earned ✗' }}</div>
               {% if k.breakdown %}

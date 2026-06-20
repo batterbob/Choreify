@@ -61,7 +61,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Summer Tracker — Admin</title>
+  <title>{{ app_name }} — Admin</title>
   <link rel="stylesheet" href="/static/style.css?v=2">
 </head>
 <body>
@@ -69,12 +69,11 @@
 
   <header class="admin-bar">
     <div>
-      <h1 class="admin-title">Summer Tracker Admin</h1>
+      <h1 class="admin-title">{{ app_name }} Admin</h1>
       <div class="today-date">{{ today_long }}</div>
     </div>
     <nav class="admin-nav">
-      <a href="/andrew">Andrew</a>
-      <a href="/daniel">Daniel</a>
+      {% for k in nav_kids %}<a href="/{{ k.slug }}">{{ k.name }}</a>{% endfor %}
       <a href="/admin">Dashboard</a>
       <a href="/status">Status</a>
       <a href="/admin/history{{ ('?today=' + debug_today) if debug_today else '' }}">History</a>
@@ -86,7 +85,7 @@
 
   {% if not in_program %}
     <div class="banner banner-break">
-      <div class="banner-big">Summer Tracker isn't running right now ☀️</div>
+      <div class="banner-big">{{ app_name }} isn't running right now ☀️</div>
     </div>
   {% endif %}
 
@@ -127,11 +126,15 @@
 
         {% if c.prorated %}
           <div class="proration-note">Targets prorated to {{ c.active_days }}/7 days:
-            Reading {{ c.reading_target }}, Outdoor {{ c.outdoor_target }} min</div>
+            {% if reading_enabled %}{{ reading_label }} {{ c.reading_target }} min{% endif %}
+            {% if reading_enabled and outdoor_enabled %}, {% endif %}
+            {% if outdoor_enabled %}{{ outdoor_label }} {{ c.outdoor_target }} min{% endif %}
+          </div>
         {% endif %}
 
+        {% if reading_enabled %}
         <div class="status-metric">
-          <div class="status-metric-head"><span>Reading</span><span>{{ c.reading.weekly }} / {{ c.reading.target }} min</span></div>
+          <div class="status-metric-head"><span>{{ reading_label }}</span><span>{{ c.reading.weekly }} / {{ c.reading.target }} min</span></div>
           <div class="bar"><div class="bar-fill" style="width: {{ [ (c.reading.weekly * 100 // c.reading.target) if c.reading.target else 0, 100] | min }}%"></div></div>
           <div class="pace-text">
             {% if c.reading.met %}Goal met ✓
@@ -139,9 +142,11 @@
             {% elif c.reading.pace_state == "no_days_left" %}Week over{% endif %}
           </div>
         </div>
+        {% endif %}
 
+        {% if outdoor_enabled %}
         <div class="status-metric">
-          <div class="status-metric-head"><span>Outdoor</span><span>{{ c.outdoor.weekly_hm }} / {{ c.outdoor.target_hm }}</span></div>
+          <div class="status-metric-head"><span>{{ outdoor_label }}</span><span>{{ c.outdoor.weekly_hm }} / {{ c.outdoor.target_hm }}</span></div>
           <div class="bar"><div class="bar-fill" style="width: {{ [ (c.outdoor.weekly * 100 // c.outdoor.target) if c.outdoor.target else 0, 100] | min }}%"></div></div>
           <div class="pace-text">
             {% if c.outdoor.met %}Goal met ✓
@@ -149,6 +154,7 @@
             {% elif c.outdoor.pace_state == "no_days_left" %}Week over{% endif %}
           </div>
         </div>
+        {% endif %}
 
         {% if c.last_week_bonus is none %}
           <div class="status-bonus status-muted">Last week's bonus: —</div>

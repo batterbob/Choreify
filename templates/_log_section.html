@@ -6,7 +6,7 @@
          data-weekly="{{ s.weekly }}"
          data-today="{{ s.today_total }}"
          data-unit="{{ 'hm' if s.kind == 'outdoor' else 'min' }}">
-  <h2>{{ "Reading" if s.kind == "reading" else "Outdoor Time" }}</h2>
+  <h2>{{ reading_label if s.kind == "reading" else outdoor_label }}</h2>
 
   <div class="progress-line weekly-text">
     This week:

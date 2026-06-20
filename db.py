@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS kids (
     -- can diverge later without a schema change.
     reading_target_minutes INTEGER NOT NULL DEFAULT 175,
     outdoor_target_minutes INTEGER NOT NULL DEFAULT 300,
+    passphrase_hash TEXT,
     created_at TEXT NOT NULL
 );
 
@@ -186,6 +187,11 @@ def _ensure_column(conn, table, column, decl):
         conn.execute("ALTER TABLE %s ADD COLUMN %s %s" % (table, column, decl))
 
 
+def _ensure_setting(conn, key, value):
+    """Insert a setting if it doesn't already exist (non-destructive migration)."""
+    conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?,?)", (key, value))
+
+
 def init_db(conn, env=None):
     """Create tables and seed first-run data if the DB is empty."""
     env = env if env is not None else os.environ
@@ -196,12 +202,23 @@ def init_db(conn, env=None):
     _ensure_column(conn, "chores", "reminder_lead_days", "INTEGER")
     _ensure_column(conn, "chores", "due_label", "TEXT")
     _ensure_column(conn, "chores", "alt_day_parity", "INTEGER")
+    _ensure_column(conn, "kids", "passphrase_hash", "TEXT")
     _migrate_bins_to_scheduled(conn)
     conn.commit()
     if conn.execute("SELECT COUNT(*) AS n FROM kids").fetchone()["n"] == 0:
         _seed(conn, env)
     else:
         _migrate_daily_assignments(conn)   # existing DB: preserve daily-for-both
+        # Non-destructive settings migration for existing DBs.
+        _ensure_setting(conn, "app_name", env.get("APP_NAME", "Family Tracker"))
+        _ensure_setting(conn, "program_label", env.get("PROGRAM_LABEL", "Activity Tracker"))
+        _ensure_setting(conn, "reading_label", "Reading")
+        _ensure_setting(conn, "reading_enabled", "1")
+        _ensure_setting(conn, "outdoor_label", "Outdoor Time")
+        _ensure_setting(conn, "outdoor_enabled", "1")
+        _ensure_setting(conn, "notify_urls", "")
+        _ensure_setting(conn, "passphrase_required", "0")
+        _ensure_setting(conn, "setup_complete", "1")  # treat existing DBs as already set up
     conn.commit()
 
 
@@ -237,107 +254,100 @@ def _migrate_bins_to_scheduled(conn):
 
 
 def _seed(conn, env):
+    """First-run seed: settings only. Kids and chores are created via the setup
+    wizard (/setup) or the admin UI after first login."""
     from logic import now_iso  # local import to avoid a cycle at module load
 
+    # Settings ---------------------------------------------------------------
+    from datetime import date
+    today = date.today().isoformat()
+    settings = {
+        "app_name": env.get("APP_NAME", "Family Tracker"),
+        "program_label": env.get("PROGRAM_LABEL", "Activity Tracker"),
+        "reading_label": "Reading",
+        "reading_enabled": "1",
+        "outdoor_label": "Outdoor Time",
+        "outdoor_enabled": "1",
+        "notify_urls": env.get("NOTIFY_URLS", ""),
+        "passphrase_required": "0",
+        "admin_password_hash": _hash_password(env.get("ADMIN_PASSWORD", "changeme")),
+        "week_start_day": "monday",
+        "timezone": env.get("TZ", "America/New_York"),
+        "reminder_time": "10:00",
+        "program_start_date": today,
+        "program_end_date": "",
+        "scoreboard_reward_text": "",
+        "flask_secret": secrets.token_hex(32),
+        "setup_complete": "0",  # triggers the setup wizard on first visit
+    }
+    conn.executemany("INSERT OR IGNORE INTO settings (key, value) VALUES (?,?)",
+                     list(settings.items()))
+
+
+def seed_test_data(conn, env=None):
+    """Create two kids and a standard set of chores for unit tests.
+
+    Not called in production — the setup wizard handles first-run data.
+    """
+    from logic import now_iso
+    env = env or {}
     ts = now_iso(env)
     reading_target = 175
     outdoor_target = 300
 
-    # Kids -------------------------------------------------------------------
     conn.executemany(
         "INSERT INTO kids (name, url_slug, active, reading_target_minutes, "
         "outdoor_target_minutes, created_at) VALUES (?,?,1,?,?,?)",
-        [
-            ("Andrew", "andrew", reading_target, outdoor_target, ts),
-            ("Daniel", "daniel", reading_target, outdoor_target, ts),
-        ],
-    )
+        [("Andrew", "andrew", reading_target, outdoor_target, ts),
+         ("Daniel", "daniel", reading_target, outdoor_target, ts)])
 
-    # Chores -----------------------------------------------------------------
-    daily = [
-        "Make your bed",
-        "Empty the dishwasher",
-        "Tidy common areas (living room & family room)",
-    ]
+    daily = ["Make your bed", "Empty the dishwasher",
+             "Tidy common areas (living room & family room)"]
     for name in daily:
-        conn.execute(
-            "INSERT INTO chores (name, type, is_rotating, active, created_at) "
-            "VALUES (?, 'daily', 0, 1, ?)", (name, ts))
+        conn.execute("INSERT INTO chores (name, type, is_rotating, active, created_at) "
+                     "VALUES (?, 'daily', 0, 1, ?)", (name, ts))
 
-    # Rotating as-needed chore.
-    conn.execute(
-        "INSERT INTO chores (name, type, is_rotating, active, created_at) "
-        "VALUES ('Take indoor trash to outdoor bins', 'as_needed', 1, 1, ?)", (ts,))
+    conn.execute("INSERT INTO chores (name, type, is_rotating, active, created_at) "
+                 "VALUES ('Take indoor trash to outdoor bins', 'as_needed', 1, 1, ?)", (ts,))
+    conn.execute("INSERT INTO chores (name, type, is_rotating, active, created_at, "
+                 "due_weekday, reminder_lead_days, due_label) "
+                 "VALUES ('Put bins out at curb', 'scheduled', 1, 1, ?, 0, 5, 'Monday night')",
+                 (ts,))
+    conn.execute("INSERT INTO chores (name, type, is_rotating, active, created_at) "
+                 "VALUES ('Put clothes away', 'as_needed', 0, 1, ?)", (ts,))
+    conn.execute("INSERT INTO chores (name, type, is_rotating, active, created_at) "
+                 "VALUES ('Clean your room', 'weekly', 0, 1, ?)", (ts,))
 
-    # Scheduled rotating chore: due Monday night, 5-day countdown.
-    conn.execute(
-        "INSERT INTO chores (name, type, is_rotating, active, created_at, "
-        "due_weekday, reminder_lead_days, due_label) "
-        "VALUES ('Put bins out at curb', 'scheduled', 1, 1, ?, 0, 5, 'Monday night')",
-        (ts,))
-
-    conn.execute(
-        "INSERT INTO chores (name, type, is_rotating, active, created_at) "
-        "VALUES ('Put clothes away', 'as_needed', 0, 1, ?)", (ts,))
-
-    # Weekly chore (v1.2): standing per-kid assignment, recurs every week.
-    conn.execute(
-        "INSERT INTO chores (name, type, is_rotating, active, created_at) "
-        "VALUES ('Clean your room', 'weekly', 0, 1, ?)", (ts,))
-
-    # Week-1 rotating assignment: Andrew -> trash, Daniel -> bins.
-    # week_start is the Monday the program begins (2026-06-22).
     andrew = conn.execute("SELECT id FROM kids WHERE url_slug='andrew'").fetchone()["id"]
     daniel = conn.execute("SELECT id FROM kids WHERE url_slug='daniel'").fetchone()["id"]
     trash = conn.execute("SELECT id FROM chores WHERE name=?",
                          ("Take indoor trash to outdoor bins",)).fetchone()["id"]
     bins = conn.execute("SELECT id FROM chores WHERE name=?",
                         ("Put bins out at curb",)).fetchone()["id"]
-    week1 = "2026-06-22"
-    conn.execute(
-        "INSERT INTO rotating_chore_assignments (chore_id, kid_id, week_start_date, "
-        "is_override) VALUES (?,?,?,0)", (trash, andrew, week1))
-    conn.execute(
-        "INSERT INTO rotating_chore_assignments (chore_id, kid_id, week_start_date, "
-        "is_override) VALUES (?,?,?,0)", (bins, daniel, week1))
-
-    # Weekly assignment: "Clean your room" recurs for both kids.
     clean_room = conn.execute("SELECT id FROM chores WHERE name=?",
                               ("Clean your room",)).fetchone()["id"]
-    conn.executemany(
-        "INSERT INTO weekly_assignments (chore_id, kid_id, created_at) VALUES (?,?,?)",
-        [(clean_room, andrew, ts), (clean_room, daniel, ts)])
-
-    # Daily chores go to BOTH kids by default (v1.4: assignment is explicit now).
+    week1 = "2026-06-22"
+    conn.execute("INSERT INTO rotating_chore_assignments (chore_id, kid_id, "
+                 "week_start_date, is_override) VALUES (?,?,?,0)", (trash, andrew, week1))
+    conn.execute("INSERT INTO rotating_chore_assignments (chore_id, kid_id, "
+                 "week_start_date, is_override) VALUES (?,?,?,0)", (bins, daniel, week1))
+    conn.executemany("INSERT INTO weekly_assignments (chore_id, kid_id, created_at) "
+                     "VALUES (?,?,?)",
+                     [(clean_room, andrew, ts), (clean_room, daniel, ts)])
     for row in conn.execute("SELECT id FROM chores WHERE type='daily'").fetchall():
-        conn.executemany(
-            "INSERT OR IGNORE INTO weekly_assignments (chore_id, kid_id, created_at) "
-            "VALUES (?,?,?)", [(row["id"], andrew, ts), (row["id"], daniel, ts)])
+        conn.executemany("INSERT OR IGNORE INTO weekly_assignments (chore_id, kid_id, "
+                         "created_at) VALUES (?,?,?)",
+                         [(row["id"], andrew, ts), (row["id"], daniel, ts)])
 
-    # Settings ---------------------------------------------------------------
-    settings = {
-        "reading_weekly_target_minutes": str(reading_target),
-        "outdoor_weekly_target_minutes": str(outdoor_target),
-        "pushover_app_token": env.get("PUSHOVER_APP_TOKEN", ""),
-        "pushover_user_key": env.get("PUSHOVER_USER_KEY", ""),
-        "admin_password_hash": _hash_password(env.get("ADMIN_PASSWORD", "changeme")),
-        "week_start_day": "monday",
-        "timezone": env.get("TZ", "America/New_York"),
-        "reminder_time": "10:00",
-        "program_start_date": "2026-06-22",  # Monday; skips the school half-week
-        "program_end_date": "2026-08-30",    # Sunday; school resumes Aug 31
-        "scoreboard_reward_text": "",        # blank until Allen & the boys choose it
-        "flask_secret": secrets.token_hex(32),
-    }
-    conn.executemany("INSERT OR IGNORE INTO settings (key, value) VALUES (?,?)",
-                     list(settings.items()))
+    conn.executemany("INSERT INTO special_periods (label, type, start_date, end_date, "
+                     "outdoor_minutes_per_day) VALUES (?,?,?,?,?)",
+                     [("Alaska cruise", "paused", "2026-07-03", "2026-07-14", None),
+                      ("Congo camp", "outdoor_credit", "2026-07-20", "2026-07-31", 60)])
 
-    # Special periods (v1.1 A) ----------------------------------------------
-    conn.executemany(
-        "INSERT INTO special_periods (label, type, start_date, end_date, "
-        "outdoor_minutes_per_day) VALUES (?,?,?,?,?)",
-        [
-            ("Alaska cruise", "paused", "2026-07-03", "2026-07-14", None),
-            ("Congo camp", "outdoor_credit", "2026-07-20", "2026-07-31", 60),
-        ],
-    )
+    conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES "
+                 "('program_start_date', '2026-06-22')")
+    conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES "
+                 "('program_end_date', '2026-08-30')")
+    conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES "
+                 "('daily_assignment_migrated', '1')")
+    conn.commit()

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Welcome — Setup</title>
+  <link rel="stylesheet" href="/static/style.css?v=2">
+</head>
+<body>
+<div class="page admin">
+
+  <header class="admin-bar">
+    <h1 class="admin-title">Welcome — First-Run Setup</h1>
+  </header>
+
+  <section class="card">
+    <p style="margin-bottom:1rem">Let's get your Family Tracker configured. You can change all of these settings later from the admin Settings page.</p>
+    <form method="post" action="/setup">
+
+      <h3 style="margin-bottom:.5rem">App identity</h3>
+      <div class="set-row">
+        <label>App name <span class="set-hint">(shown in browser tabs &amp; notifications)</span>
+          <input type="text" name="app_name" value="Family Tracker" class="set-text wide" required>
+        </label>
+      </div>
+      <div class="set-row">
+        <label>Program label <span class="set-hint">(shown as section headings)</span>
+          <input type="text" name="program_label" value="Activity Tracker" class="set-text wide">
+        </label>
+      </div>
+
+      <h3 style="margin-top:1.25rem;margin-bottom:.5rem">Timezone</h3>
+      <div class="set-row">
+        <label>Timezone
+          <select name="timezone" class="add-type">
+            {% for tz in common_tz %}
+              <option value="{{ tz }}"{{ ' selected' if tz == 'America/New_York' else '' }}>{{ tz }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <span class="set-hint">Not listed? Enter it in Settings → App &amp; program after setup.</span>
+      </div>
+
+      <h3 style="margin-top:1.25rem;margin-bottom:.5rem">Admin password</h3>
+      <div class="set-row">
+        <label>Password <span class="set-hint">(leave blank to keep the default: "changeme")</span>
+          <input type="password" name="password" class="set-text" autocomplete="new-password">
+        </label>
+      </div>
+
+      <h3 style="margin-top:1.25rem;margin-bottom:.5rem">Kids (add up to 4)</h3>
+      <div class="set-hint" style="margin-bottom:.75rem">The URL slug becomes their page address — e.g. slug "alex" → /alex. Lowercase, no spaces.</div>
+      {% for i in [1, 2, 3, 4] %}
+        <div class="set-row">
+          <label>Kid {{ i }} name
+            <input type="text" name="kid{{ i }}_name" class="add-name" placeholder="e.g. Alex{% if i == 2 %}, Jordan{% endif %}">
+          </label>
+          <label>URL slug
+            <input type="text" name="kid{{ i }}_slug" class="set-text"
+                   placeholder="e.g. alex{% if i == 2 %}, jordan{% endif %}"
+                   pattern="[a-z0-9_-]*">
+          </label>
+        </div>
+      {% endfor %}
+      <div class="set-hint" style="margin-bottom:1rem">At least one kid is required. You can add more from Settings later.</div>
+
+      <button class="mini-btn primary" type="submit" style="font-size:1rem;padding:.6rem 1.5rem">
+        Finish setup &amp; go to dashboard →
+      </button>
+    </form>
+  </section>
+
+</div>
+</body>
+</html>

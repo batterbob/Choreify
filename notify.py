@@ -1,35 +1,30 @@
-"""Pushover notifications — fire-and-forget. A failure must never block an API
-response or raise into the request path (spec: log and return 200)."""
+"""Notifications via Apprise — fire-and-forget. A failure must never block an API
+response or raise into the request path: log and return False."""
 import logging
-
-import requests
 
 import logic
 
 log = logging.getLogger("chore.notify")
 
-PUSHOVER_URL = "https://api.pushover.net/1/messages.json"
-
 
 def send(conn, title, message):
-    """Best-effort Pushover send. Returns True on success, never raises."""
-    token = logic.get_setting(conn, "pushover_app_token", "") or ""
-    user = logic.get_setting(conn, "pushover_user_key", "") or ""
-    if not token or not user:
-        log.warning("Pushover not configured; skipping: %s / %s", title, message)
+    """Best-effort Apprise notification. Returns True on success, never raises."""
+    urls_raw = logic.get_setting(conn, "notify_urls", "") or ""
+    urls = [u.strip() for u in urls_raw.splitlines() if u.strip()]
+    if not urls:
+        log.warning("No notification URLs configured; skipping: %s", title)
         return False
     try:
-        resp = requests.post(
-            PUSHOVER_URL,
-            data={"token": token, "user": user, "title": title, "message": message},
-            timeout=5,
-        )
-        if resp.status_code != 200:
-            log.error("Pushover returned %s: %s", resp.status_code, resp.text[:200])
-            return False
-        return True
+        import apprise
+        ap = apprise.Apprise()
+        for url in urls:
+            ap.add(url)
+        result = ap.notify(title=title, body=message)
+        if not result:
+            log.error("Apprise notify returned False for: %s", title)
+        return bool(result)
     except Exception as exc:  # noqa: BLE001 - fire-and-forget by design
-        log.error("Pushover send failed: %s", exc)
+        log.error("Notification send failed: %s", exc)
         return False
 
 
