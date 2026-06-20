@@ -119,6 +119,31 @@ def is_paused(conn, d):
     return paused_period_on(conn, d) is not None
 
 
+def paused_chore_ids_on(conn, d):
+    """Set of chore IDs explicitly paused by any special period active on date d."""
+    s = d2s(d)
+    rows = conn.execute(
+        "SELECT spc.chore_id FROM special_period_paused_chores spc "
+        "JOIN special_periods sp ON sp.id = spc.special_period_id "
+        "WHERE sp.start_date <= ? AND sp.end_date >= ?", (s, s)).fetchall()
+    return {r["chore_id"] for r in rows}
+
+
+def activity_required_days_in_week(conn, ws, col):
+    """Active days in week ws where activity col ('pause_reading'/'pause_outdoor') is NOT paused."""
+    count = 0
+    for d in week_dates(ws):
+        if not is_active_day(conn, d):
+            continue
+        s = d2s(d)
+        hit = conn.execute(
+            "SELECT 1 FROM special_periods WHERE %s=1 "
+            "AND start_date <= ? AND end_date >= ? LIMIT 1" % col, (s, s)).fetchone()
+        if hit is None:
+            count += 1
+    return count
+
+
 def is_active_day(conn, d):
     """A day counts toward goals if it's in the program window and not paused."""
     return in_program_window(conn, d) and not is_paused(conn, d)
@@ -163,12 +188,18 @@ def ensure_camp_credit(conn, upto):
 # Targets & weekly totals
 # --------------------------------------------------------------------------- #
 def prorated_targets(conn, kid, ws):
-    """Targets scaled to the active days in this Mon-Sun window (v1.1 B)."""
+    """Targets scaled to the active days in this Mon-Sun window (v1.1 B).
+
+    Activity targets are further reduced for days where that activity is paused
+    by a special period (pause_reading / pause_outdoor flags).
+    """
     active = active_days_in_week(conn, ws)
     if active == 0:
         return {"reading": 0, "outdoor": 0, "active_days": 0, "full": False}
-    r = round(kid["reading_target_minutes"] * active / 7)
-    o = round(kid["outdoor_target_minutes"] * active / 7)
+    r_days = activity_required_days_in_week(conn, ws, "pause_reading")
+    o_days = activity_required_days_in_week(conn, ws, "pause_outdoor")
+    r = round(kid["reading_target_minutes"] * r_days / 7)
+    o = round(kid["outdoor_target_minutes"] * o_days / 7)
     return {"reading": r, "outdoor": o, "active_days": active, "full": active == 7}
 
 
@@ -273,11 +304,14 @@ def chore_assigned_to(conn, chore, kid_id, ws):
 def assigned_daily_chores(conn, kid_id, d):
     """Active daily and alternate_daily chores assigned to this kid, visible today."""
     ws = week_start(d)
+    paused_ids = paused_chore_ids_on(conn, d)
     chores = conn.execute(
         "SELECT * FROM chores WHERE type IN ('daily', 'alternate_daily') "
         "AND active=1 ORDER BY id").fetchall()
     result = []
     for c in chores:
+        if c["id"] in paused_ids:
+            continue
         if not chore_assigned_to(conn, c, kid_id, ws):
             continue
         if c["type"] == "daily" or _alt_daily_show_today(conn, kid_id, c, d):
@@ -347,11 +381,13 @@ def weekly_done(conn, kid_id, chore_id, d):
 def weekly_chores_for_kid(conn, kid_id, d):
     """Active weekly chores for this kid (fixed or rotating), with done flag."""
     ws = week_start(d)
+    paused_ids = paused_chore_ids_on(conn, d)
     chores = conn.execute(
         "SELECT * FROM chores WHERE type='weekly' AND active=1 ORDER BY id").fetchall()
     return [{"id": c["id"], "name": c["name"],
              "done": weekly_done(conn, kid_id, c["id"], d)}
-            for c in chores if chore_assigned_to(conn, c, kid_id, ws)]
+            for c in chores
+            if c["id"] not in paused_ids and chore_assigned_to(conn, c, kid_id, ws)]
 
 
 # --------------------------------------------------------------------------- #
@@ -406,11 +442,14 @@ def scheduled_state(conn, kid_id, chore, d):
 def scheduled_for_kid(conn, kid_id, d):
     """Active scheduled chores assigned to this kid that should show today."""
     ws = week_start(d)
+    paused_ids = paused_chore_ids_on(conn, d)
     out = []
     chores = conn.execute(
         "SELECT * FROM chores WHERE type='scheduled' AND active=1 ORDER BY id"
     ).fetchall()
     for ch in chores:
+        if ch["id"] in paused_ids:
+            continue
         if not chore_assigned_to(conn, ch, kid_id, ws):
             continue
         st = scheduled_state(conn, kid_id, ch, d)

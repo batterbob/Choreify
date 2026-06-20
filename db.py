@@ -133,7 +133,16 @@ CREATE TABLE IF NOT EXISTS special_periods (
     type TEXT NOT NULL,              -- 'paused' or 'outdoor_credit'
     start_date TEXT NOT NULL,        -- inclusive, local
     end_date TEXT NOT NULL,          -- inclusive, local
-    outdoor_minutes_per_day INTEGER  -- only for type='outdoor_credit'
+    outdoor_minutes_per_day INTEGER, -- only for type='outdoor_credit'
+    pause_reading INTEGER NOT NULL DEFAULT 0,
+    pause_outdoor INTEGER NOT NULL DEFAULT 0
+);
+
+-- Per-period chore pausing: specific chores skipped during a special period.
+CREATE TABLE IF NOT EXISTS special_period_paused_chores (
+    special_period_id INTEGER NOT NULL,
+    chore_id INTEGER NOT NULL,
+    PRIMARY KEY (special_period_id, chore_id)
 );
 
 -- v1.1 C: make-up Monday bonus reinstatement.
@@ -203,6 +212,8 @@ def init_db(conn, env=None):
     _ensure_column(conn, "chores", "due_label", "TEXT")
     _ensure_column(conn, "chores", "alt_day_parity", "INTEGER")
     _ensure_column(conn, "kids", "passphrase_hash", "TEXT")
+    _ensure_column(conn, "special_periods", "pause_reading", "INTEGER NOT NULL DEFAULT 0")
+    _ensure_column(conn, "special_periods", "pause_outdoor", "INTEGER NOT NULL DEFAULT 0")
     _migrate_bins_to_scheduled(conn)
     conn.commit()
     if conn.execute("SELECT COUNT(*) AS n FROM kids").fetchone()["n"] == 0:

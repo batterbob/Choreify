@@ -73,12 +73,12 @@
       <div class="today-date">{{ today_long }}</div>
     </div>
     <nav class="admin-nav">
-      {% for k in nav_kids %}<a href="/{{ k.slug }}">{{ k.name }}</a>{% endfor %}
       <a href="/admin">Dashboard</a>
       <a href="/status">Status</a>
       <a href="/admin/history{{ ('?today=' + debug_today) if debug_today else '' }}">History</a>
       <a href="/admin/logs{{ ('?today=' + debug_today) if debug_today else '' }}">Logs</a>
       <a href="/admin/settings">Settings</a>
+      {% for k in nav_kids %}<a href="/{{ k.slug }}">{{ k.name }}</a>{% endfor %}
       <a href="/admin/logout">Log out</a>
     </nav>
   </header>
@@ -167,6 +167,62 @@
     {% endfor %}
   </div>
 
+  {# ---- Per-kid assignments & overrides ---- #}
+  <h2 class="admin-section-h">Assignments &amp; overrides</h2>
+  <section class="card">
+    <div class="status-sub">Mark a daily chore done today</div>
+    <div class="status-grid">
+      {% for c in cards %}
+        <div{% if loop.last %} class="overrides-right"{% endif %}>
+          <h3 class="status-name">{{ c.name }}</h3>
+          {% if c.daily_incomplete %}
+            {% for ch in c.daily_incomplete %}
+              <form method="post" action="/admin/checklist/override" class="row-form">
+                {{ today_field() }}
+                <input type="hidden" name="kid_id" value="{{ c.id }}">
+                <input type="hidden" name="chore_id" value="{{ ch.id }}">
+                <button class="mini-btn">✓ {{ ch.name }}</button>
+              </form>
+            {% endfor %}
+          {% else %}
+            <div class="status-line status-good">All daily chores done ✓</div>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="status-sub">As-needed assignments</div>
+    <div class="status-grid">
+      {% for c in cards %}
+        <div{% if loop.last %} class="overrides-right"{% endif %}>
+          <h3 class="status-name">{{ c.name }}</h3>
+          {% for a in c.as_needed %}
+            {% if a.done %}
+              <div class="status-line status-good">✓ {{ a.name }} <span class="status-when">{{ a.time }}</span></div>
+            {% else %}
+              <form method="post" action="/admin/assign/complete" class="row-form">
+                {{ today_field() }}<input type="hidden" name="assignment_id" value="{{ a.id }}">
+                <span class="row-label">• {{ a.name }} (pending)</span>
+                <button class="mini-btn">Mark complete</button>
+              </form>
+            {% endif %}
+          {% endfor %}
+          {% for ch in as_needed_chores %}
+            <form method="post" action="/admin/assign" class="row-form">
+              {{ today_field() }}
+              <input type="hidden" name="kid_id" value="{{ c.id }}">
+              <input type="hidden" name="chore_id" value="{{ ch.id }}">
+              <button class="mini-btn primary">Assign</button>
+              <span class="row-label">{{ ch.name }}</span>
+            </form>
+          {% endfor %}
+        </div>
+      {% endfor %}
+    </div>
+  </section>
+
   {# ---- Chore management ---- #}
   <h2 class="admin-section-h">Chores</h2>
   <section class="card">
@@ -245,62 +301,6 @@
     <div class="set-hint">Set <strong>who does each chore</strong> using the dropdown in the "Who does it" column.
       Choose a kid, both, or <strong>Rotate → [name] starts</strong> to alternate weekly.
       "Scheduled" = recurring on a weekday with a countdown on the kid's page.</div>
-  </section>
-
-  {# ---- Per-kid assignments & overrides ---- #}
-  <h2 class="admin-section-h">Assignments &amp; overrides</h2>
-  <section class="card">
-    <div class="status-sub">Mark a daily chore done today</div>
-    <div class="status-grid">
-      {% for c in cards %}
-        <div{% if loop.last %} class="overrides-right"{% endif %}>
-          <h3 class="status-name">{{ c.name }}</h3>
-          {% if c.daily_incomplete %}
-            {% for ch in c.daily_incomplete %}
-              <form method="post" action="/admin/checklist/override" class="row-form">
-                {{ today_field() }}
-                <input type="hidden" name="kid_id" value="{{ c.id }}">
-                <input type="hidden" name="chore_id" value="{{ ch.id }}">
-                <button class="mini-btn">✓ {{ ch.name }}</button>
-              </form>
-            {% endfor %}
-          {% else %}
-            <div class="status-line status-good">All daily chores done ✓</div>
-          {% endif %}
-        </div>
-      {% endfor %}
-    </div>
-  </section>
-
-  <section class="card">
-    <div class="status-sub">As-needed assignments</div>
-    <div class="status-grid">
-      {% for c in cards %}
-        <div{% if loop.last %} class="overrides-right"{% endif %}>
-          <h3 class="status-name">{{ c.name }}</h3>
-          {% for a in c.as_needed %}
-            {% if a.done %}
-              <div class="status-line status-good">✓ {{ a.name }} <span class="status-when">{{ a.time }}</span></div>
-            {% else %}
-              <form method="post" action="/admin/assign/complete" class="row-form">
-                {{ today_field() }}<input type="hidden" name="assignment_id" value="{{ a.id }}">
-                <span class="row-label">• {{ a.name }} (pending)</span>
-                <button class="mini-btn">Mark complete</button>
-              </form>
-            {% endif %}
-          {% endfor %}
-          {% for ch in as_needed_chores %}
-            <form method="post" action="/admin/assign" class="row-form">
-              {{ today_field() }}
-              <input type="hidden" name="kid_id" value="{{ c.id }}">
-              <input type="hidden" name="chore_id" value="{{ ch.id }}">
-              <button class="mini-btn primary">Assign</button>
-              <span class="row-label">{{ ch.name }}</span>
-            </form>
-          {% endfor %}
-        </div>
-      {% endfor %}
-    </div>
   </section>
 
   {# ---- Rotating chore manager ---- #}

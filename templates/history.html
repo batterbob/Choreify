@@ -12,12 +12,12 @@
   <header class="admin-bar">
     <h1 class="admin-title">History</h1>
     <nav class="admin-nav">
-      {% for k in nav_kids %}<a href="/{{ k.slug }}">{{ k.name }}</a>{% endfor %}
       <a href="/admin">Dashboard</a>
       <a href="/status">Status</a>
       <a href="/admin/history">History</a>
       <a href="/admin/logs">Logs</a>
       <a href="/admin/settings">Settings</a>
+      {% for k in nav_kids %}<a href="/{{ k.slug }}">{{ k.name }}</a>{% endfor %}
       <a href="/admin/logout">Log out</a>
     </nav>
   </header>

@@ -353,6 +353,17 @@ def _valid_time(s):
     return bool(re.match(r"^([01]?\d|2[0-3]):[0-5]\d$", s or ""))
 
 
+def _specials_with_paused(conn):
+    """Return special_periods rows enriched with paused_chore_ids (a set of ints)."""
+    result = []
+    for sp in logic.special_periods(conn):
+        rows = conn.execute(
+            "SELECT chore_id FROM special_period_paused_chores WHERE special_period_id=?",
+            (sp["id"],)).fetchall()
+        result.append(dict(sp, paused_chore_ids={r["chore_id"] for r in rows}))
+    return result
+
+
 def settings_view(conn):
     kids = [{"id": k["id"], "name": k["name"], "slug": k["url_slug"],
              "reading_target": k["reading_target_minutes"],
@@ -389,7 +400,11 @@ def settings_view(conn):
         "notify_urls": g("notify_urls", ""),
         "passphrase_required_val": g("passphrase_required", "0") == "1",
         "notify_test": request.args.get("notify_test"),
-        "specials": [dict(r) for r in logic.special_periods(conn)],
+        "specials": _specials_with_paused(conn),
+        "pauseable_chores": [dict(r) for r in conn.execute(
+            "SELECT id, name, type FROM chores "
+            "WHERE type IN ('daily','alternate_daily','weekly','scheduled') "
+            "AND active=1 AND deleted=0 ORDER BY type, id").fetchall()],
         "saved": request.args.get("saved"),
         "pwerror": request.args.get("pwerror"),
     }
@@ -924,6 +939,17 @@ def admin_settings_password():
     return redirect("/admin/settings?pwerror=1")
 
 
+def _save_paused_chores(conn, sp_id):
+    """Replace the paused-chore list for a special period from form checkboxes."""
+    conn.execute("DELETE FROM special_period_paused_chores WHERE special_period_id=?", (sp_id,))
+    for cid in request.form.getlist("paused_chores"):
+        cid_int = _int_or_none(cid)
+        if cid_int:
+            conn.execute(
+                "INSERT OR IGNORE INTO special_period_paused_chores "
+                "(special_period_id, chore_id) VALUES (?,?)", (sp_id, cid_int))
+
+
 @app.route("/admin/special/add", methods=["POST"])
 @require_admin
 def admin_special_add():
@@ -938,10 +964,13 @@ def admin_special_add():
             omd = int(omd) if ptype == "outdoor_credit" else None
         except (TypeError, ValueError):
             omd = None
-        conn.execute(
+        pause_reading = 1 if request.form.get("pause_reading") else 0
+        pause_outdoor = 1 if request.form.get("pause_outdoor") else 0
+        cur = conn.execute(
             "INSERT INTO special_periods (label, type, start_date, end_date, "
-            "outdoor_minutes_per_day) VALUES (?,?,?,?,?)",
-            (label, ptype, start, end, omd))
+            "outdoor_minutes_per_day, pause_reading, pause_outdoor) VALUES (?,?,?,?,?,?,?)",
+            (label, ptype, start, end, omd, pause_reading, pause_outdoor))
+        _save_paused_chores(conn, cur.lastrowid)
         conn.commit()
     return redirect("/admin/settings?saved=1")
 
@@ -950,6 +979,7 @@ def admin_special_add():
 @require_admin
 def admin_special_edit():
     conn = get_db()
+    sp_id = request.form.get("id")
     label = (request.form.get("label") or "").strip()
     ptype = request.form.get("type")
     start = (request.form.get("start_date") or "").strip()
@@ -960,10 +990,13 @@ def admin_special_edit():
             omd = int(omd) if ptype == "outdoor_credit" else None
         except (TypeError, ValueError):
             omd = None
+        pause_reading = 1 if request.form.get("pause_reading") else 0
+        pause_outdoor = 1 if request.form.get("pause_outdoor") else 0
         conn.execute(
             "UPDATE special_periods SET label=?, type=?, start_date=?, end_date=?, "
-            "outdoor_minutes_per_day=? WHERE id=?",
-            (label, ptype, start, end, omd, request.form.get("id")))
+            "outdoor_minutes_per_day=?, pause_reading=?, pause_outdoor=? WHERE id=?",
+            (label, ptype, start, end, omd, pause_reading, pause_outdoor, sp_id))
+        _save_paused_chores(conn, sp_id)
         conn.commit()
     return redirect("/admin/settings?saved=1")
 
@@ -972,7 +1005,9 @@ def admin_special_edit():
 @require_admin
 def admin_special_delete():
     conn = get_db()
-    conn.execute("DELETE FROM special_periods WHERE id=?", (request.form.get("id"),))
+    sp_id = request.form.get("id")
+    conn.execute("DELETE FROM special_period_paused_chores WHERE special_period_id=?", (sp_id,))
+    conn.execute("DELETE FROM special_periods WHERE id=?", (sp_id,))
     conn.commit()
     return redirect("/admin/settings?saved=1")
 
