@@ -243,8 +243,8 @@
         Format: <code>pover://app_token/user_key</code>, <code>tgram://bottoken/chatid</code>, <code>ntfy://topic</code>.
         See <a href="https://github.com/caronc/apprise/wiki" target="_blank" rel="noopener">Apprise wiki</a> for all URL formats.
       </div>
-      <div class="set-row" style="margin-top:.75rem">
-        <label style="display:flex;gap:.5rem;align-items:center"><input type="checkbox" name="passphrase_required"{{ ' checked' if passphrase_required_val else '' }}> Lock kid pages — kids must enter their passphrase to view their page</label>
+      <div style="margin-top:.75rem">
+        <label><input type="checkbox" name="passphrase_required"{{ ' checked' if passphrase_required_val else '' }}>&nbsp;Lock kid pages — kids must enter their passphrase to view their page</label>
       </div>
       <button class="mini-btn primary" type="submit">Save notifications</button>
     </form>
