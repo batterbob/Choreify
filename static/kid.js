@@ -1,7 +1,7 @@
-/* Chore Tracker kid page. Targets Safari iOS 15 — no ES2022+ syntax.
-   Core idea (handoff + v1.1 E2): taps don't hit the API immediately. They show a
-   3-second "Undo" toast; the POST fires only when that window closes. Undo cancels
-   it. This makes accidental taps on a slow iPad reversible. */
+/* Chore Tracker kid page. No ES2022+ syntax for broad browser compatibility.
+   Core idea: taps don't hit the API immediately. They show a 3-second "Undo"
+   toast; the POST fires only when that window closes. Undo cancels it. This
+   makes accidental taps on a slow tablet reversible. */
 (function () {
   "use strict";
 
@@ -83,6 +83,29 @@
     return false;
   }
 
+  /* ---- confetti ---- */
+  function fireConfetti(big) {
+    if (typeof confetti === "undefined") { return; }
+    if (big) {
+      // Full-screen celebration: center burst + two side cannons
+      confetti({ particleCount: 160, spread: 80, origin: { x: 0.5, y: 0.45 } });
+      setTimeout(function () {
+        confetti({ particleCount: 120, spread: 110, angle: 60,
+                   origin: { x: 0, y: 0.65 } });
+      }, 250);
+      setTimeout(function () {
+        confetti({ particleCount: 120, spread: 110, angle: 120,
+                   origin: { x: 1, y: 0.65 } });
+      }, 500);
+      setTimeout(function () {
+        confetti({ particleCount: 80, spread: 60, startVelocity: 45,
+                   origin: { x: 0.5, y: 0.3 } });
+      }, 800);
+    } else {
+      confetti({ particleCount: 55, spread: 65, origin: { x: 0.5, y: 0.55 } });
+    }
+  }
+
   /* ============================ CHECKLIST ============================ */
   function lockRow(row) {
     row.classList.add("locked");
@@ -121,6 +144,9 @@
           var list = $("#checklist"), cel = $("#celebration");
           if (list) { list.hidden = true; }
           if (cel) { cel.hidden = false; }
+          fireConfetti(true);   // big celebration — whole checklist done
+        } else {
+          fireConfetti(false);  // small burst — single chore done
         }
         if (data.bonus_reinstated) { markBonusReinstated(); }
       })
