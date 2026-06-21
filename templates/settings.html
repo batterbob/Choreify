@@ -185,6 +185,15 @@
         </label>
         <span class="set-hint">When set, the kid's page shows a running total of allowance earned from bonus weeks.</span>
       </div>
+      {% if not reading_enabled_val and not outdoor_enabled_val %}
+      <div class="set-row">
+        <label>Checklist days needed for the weekly bonus (blank = every day)
+          <input type="number" name="checklist_min_days" value="{{ checklist_min_days }}"
+                 min="1" max="7" class="set-num" placeholder="every day">
+        </label>
+        <span class="set-hint">Chores-only mode: with no activities enabled, the bonus is earned by finishing the daily checklist on this many days each week.</span>
+      </div>
+      {% endif %}
       <button class="mini-btn primary" type="submit">Save</button>
     </form>
   </section>

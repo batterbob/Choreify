@@ -186,8 +186,8 @@
           <thead>
             <tr>
               <th>Week</th>
-              <th>Reading</th>
-              <th>Outdoor</th>
+              {% if reading_enabled %}<th>{{ reading_label }}</th>{% endif %}
+              {% if outdoor_enabled %}<th>{{ outdoor_label }}</th>{% endif %}
               <th>Bonus</th>
             </tr>
           </thead>
@@ -195,8 +195,8 @@
             {% for h in bonus_history %}
               <tr class="{% if h.earned %}hist-earned{% else %}hist-missed{% endif %}">
                 <td>{{ h.label }}</td>
-                <td>{{ h.reading }}/{{ h.reading_target }} min</td>
-                <td>{{ h.outdoor_hm }}/{{ h.outdoor_target_hm }}</td>
+                {% if reading_enabled %}<td>{{ h.reading }}/{{ h.reading_target }} min</td>{% endif %}
+                {% if outdoor_enabled %}<td>{{ h.outdoor_hm }}/{{ h.outdoor_target_hm }}</td>{% endif %}
                 <td>{% if h.earned %}⭐{% else %}—{% endif %}</td>
               </tr>
             {% endfor %}

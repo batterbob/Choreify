@@ -435,6 +435,7 @@ def settings_view(conn):
         "program_end": g("program_end_date", ""),
         "reward": g("scoreboard_reward_text", ""),
         "bonus_dollar_amount": g("bonus_dollar_amount", ""),
+        "checklist_min_days": g("checklist_min_days", ""),
         "notify_service": g("notify_service", "none"),
         "notify_pushover_app_token": g("notify_pushover_app_token", ""),
         "notify_pushover_user_key": g("notify_pushover_user_key", ""),
@@ -960,6 +961,8 @@ def admin_settings_general():
                       (request.form.get("reward") or "").strip())
     logic.set_setting(conn, "bonus_dollar_amount",
                       (request.form.get("bonus_dollar_amount") or "").strip())
+    min_days = (request.form.get("checklist_min_days") or "").strip()
+    logic.set_setting(conn, "checklist_min_days", min_days if min_days.isdigit() else "")
     conn.commit()
     return redirect("/admin/settings?saved=1")
 
@@ -1398,6 +1401,17 @@ def setup_wizard():
         logic.set_setting(conn, "timezone", tz)
         if password:
             logic.set_setting(conn, "admin_password_hash", db.hash_password(password))
+        # Activities: enable/label each, or turn off for a chores-only setup.
+        logic.set_setting(conn, "reading_enabled",
+                          "1" if request.form.get("reading_enabled") else "0")
+        logic.set_setting(conn, "reading_label",
+                          (request.form.get("reading_label") or "Reading").strip())
+        logic.set_setting(conn, "outdoor_enabled",
+                          "1" if request.form.get("outdoor_enabled") else "0")
+        logic.set_setting(conn, "outdoor_label",
+                          (request.form.get("outdoor_label") or "Outdoor Time").strip())
+        logic.set_setting(conn, "scoreboard_reward_text",
+                          (request.form.get("reward") or "").strip())
         # Add kids from form (up to 4)
         for i in range(1, 5):
             name = (request.form.get("kid%d_name" % i) or "").strip()

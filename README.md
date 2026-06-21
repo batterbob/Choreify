@@ -1,57 +1,90 @@
 # ChoreBoard
 
-A self-hosted web app for keeping kids on track during a structured program — summer, school year, whatever you're running. Kids check off daily chores and log reading and outdoor time on their own. Parents get a read-only status page and a password-protected admin dashboard. There area also built-in notiications to services like Pushover and others.
+**A simple chore and habit tracker your kids run themselves.**
 
-Plain Flask + SQLite + vanilla JS. Runs as a single Docker container. No build step, no database server to manage.
+Every morning your kids open their own page on a tablet or phone, check off their chores, and log things like reading or outdoor time. If they hit their goals for the week, they earn a reward you choose — extra screen time, allowance, whatever works in your house. You get a notification when they're done and a dashboard showing how everyone's doing.
 
-MIT License.
+No accounts to create, no monthly fee, no data leaving your home. It runs on your own computer or home server.
 
----
-
-## What it does
-
-Kids get their own page (by URL — no login needed) with a daily checklist, weekly chores, and activity logs. Each week, if they hit their reading and outdoor targets, they earn a bonus star. The admin dashboard shows you everything at a glance: today's checklist status, weekly progress, and activity totals.
-
-A scheduler fires a mid-morning reminder via a notification service (e.g. Pushover) if a kid's checklist isn't done, and a Sunday evening summary of the week. Vacations and special periods pause or credit activities automatically.
+> Built with plain Flask + SQLite. One small Docker container, no database server to manage.
 
 ---
 
-## Pages
+## Is this for you?
 
-| URL | Who | Notes |
-|-----|-----|-------|
-| `/alex`, `/jordan` | Kids | URL is the identity — no login. Chores, logs, scoreboard. |
-| `/status` | Parents | Read-only. No password. Auto-refreshes every minute. |
-| `/admin` | Parents | Password-protected dashboard. |
-| `/admin/settings` | Parents | Targets, reminders, program window, vacations, notifications, password. |
-| `/admin/logs` | Parents | Edit or delete this week's activity entries. |
-| `/admin/history` | Parents | Week-by-week breakdown and streaks. |
+ChoreBoard is a good fit if:
+
+- You want kids to track their own chores without nagging.
+- You'd like to tie a reward to finishing the week.
+- You're comfortable running a **Docker container** on a home server, NAS, or an always-on PC. *(If you've never used Docker, the [Deploy](#deploy-with-docker) section walks through it — but this isn't a hosted app you just sign up for. You run it yourself.)*
+
+It works great for the summer, the school year, or all year round — you set the start and end dates (or leave it running indefinitely).
 
 ---
 
-## Screenshots
+## What it looks like
 
-**Admin dashboard** — today's checklist status and weekly progress for each kid:
-
-![Admin dashboard](docs/screenshots/admin-dashboard.png)
-
-**Kid page** — daily checklist, weekly chores, and activity logging:
+**Each kid's page** — daily checklist, weekly chores, activity logging, and a scoreboard of stars and streaks:
 
 ![Kid page](docs/screenshots/kid-page.png)
 
-**Status page** — parent read-only view, no password:
+**Your dashboard** — today's status and the week's progress for every kid at a glance:
+
+![Admin dashboard](docs/screenshots/admin-dashboard.png)
+
+**Status page** — a read-only view you can leave open on a kitchen tablet, no password needed:
 
 ![Status page](docs/screenshots/status-page.png)
 
-**Settings** — kids, activity targets, program window, notifications:
+**Settings** — kids, activities, goals, the reward, vacations, and notifications:
 
 ![Settings](docs/screenshots/settings-page.png)
 
 ---
 
+## Who uses what
+
+- **Kids** get their own page at a simple link (e.g. `yourserver/alex`). The link *is* their login — no password to remember. They check off chores and log their minutes themselves.
+- **You** get a password-protected dashboard to see everyone's progress, mark chores done, assign extra ones, set goals, and handle vacations.
+- **The whole family** can leave the status page up on a shared tablet — it auto-refreshes and needs no password.
+
+---
+
+## How the week works
+
+- **Chores** come in a few flavors: every day, every other day, once a week, on a specific weekday with a countdown, or one-off "do this today" assignments.
+- **Activities** are optional things you track in minutes — reading and outdoor time out of the box, and you can rename them or turn them off entirely.
+- **The bonus.** Each week a kid who hits their goals earns a star and the reward you set. If you turn activities off, the bonus is simply about finishing the daily checklist — you choose how many days a week count.
+- **Reminders.** ChoreBoard can send you a phone notification mid-morning if a kid hasn't finished, plus a Sunday-evening wrap-up of the week.
+- **Vacations.** Mark a trip or camp and ChoreBoard pauses chores (or auto-credits outdoor time) so a week off doesn't break anyone's streak.
+
+---
+
+## Deploy with Docker
+
+```bash
+git clone https://github.com/batterbob/choreboard.git
+cd choreboard
+cp .env.example .env   # then edit .env with your own values
+docker compose up -d --build
+```
+
+Check that it started:
+
+```bash
+docker compose logs -f
+# look for: Scheduler started (minute interval)
+```
+
+Open `http://your-server-address:7823` in a browser. The first time, ChoreBoard walks you through a short setup: app name, timezone, your kids, the activities you want to track, and the reward. Everything is changeable later in Settings.
+
+Your data lives in `./data/` on the host (a SQLite file), so it survives restarts and updates. To update later: pull the latest code and run `docker compose up -d --build` again — the database migrates itself without losing anything.
+
+---
+
 ## Configuration (`.env`)
 
-All secrets and runtime config live in a `.env` file in the project root. It is gitignored — never commit it. Create it from this template:
+A few settings live in a `.env` file in the project folder. It's gitignored — never commit it. Start from the template:
 
 ```dotenv
 ADMIN_PASSWORD=change-me-before-first-run
@@ -59,77 +92,37 @@ PORT=7823
 TZ=America/New_York
 CHORE_DEBUG=0
 
-# Notifications (pick one service — set the rest in /admin/settings after startup)
-# NOTIFY_SERVICE=pushover
-# NOTIFY_PUSHOVER_APP_TOKEN=your-token
-# NOTIFY_PUSHOVER_USER_KEY=your-key
-
-# Optional: ping a push monitor URL each minute to confirm the scheduler is running
+# Optional: ping a monitor each minute so you know the app is alive
 # HEALTHCHECK_URL=https://your-monitor-url/ping
 ```
 
-**`ADMIN_PASSWORD`** — set this before the first run. It gets hashed into the database on startup and is not re-read afterward. To change it later, use `/admin/settings`.
-
-**Notifications** — supported services: Pushover, Telegram, Discord, Slack, ntfy, Gotify, or any Apprise URL. Set credentials in Settings after the first run — or put them in the environment and they'll be picked up automatically.
-
-**`TZ`** — all date logic runs in local time. Use a [tz database name](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) (e.g. `America/Chicago`, `Europe/London`).
-
-**`CHORE_DEBUG`** — leave `0` in production. When `1`, you can append `?today=YYYY-MM-DD` to any page to preview other dates before the program starts.
+- **`ADMIN_PASSWORD`** — set a real password before the first run. Change it later in Settings.
+- **`TZ`** — your local timezone, e.g. `America/Chicago`, `Europe/London`. All the day-by-day logic runs in this zone.
+- **`PORT`** — the port ChoreBoard listens on (default 7823).
+- **`CHORE_DEBUG`** — leave `0` normally.
 
 ---
 
-## Deploy on Docker
+## Notifications
 
-```bash
-git clone https://github.com/batterbob/choreboard.git
-cd choreboard
-cp .env.example .env   # edit with your values
-docker compose up -d --build
-```
-
-Confirm it came up:
-
-```bash
-docker compose logs -f
-# should see: Scheduler started (minute interval)
-```
-
-The app runs on port 7823. The SQLite database persists in `./data/` (mounted as a Docker volume), so it survives container restarts and rebuilds.
-
-**Updating:** pull new code, then `docker compose up -d --build`. The database migrates itself non-destructively.
+ChoreBoard can send a push notification when a kid finishes and a weekly summary on Sunday. Supported services include **Pushover, Telegram, Discord, Slack, ntfy, and Gotify** (anything [Apprise](https://github.com/caronc/apprise) supports). Pick one in **Settings → Notifications**, paste in your credentials, and hit *Send test notification* to confirm it works. There's step-by-step help next to each service.
 
 ---
 
-## First-run setup
+## Monitoring (optional)
 
-On first startup with an empty database, the app redirects to a setup wizard. Enter your kids' names (URL slugs are auto-filled), your timezone, and the program window (start and end dates). You can add chores and fine-tune everything from the admin dashboard once it's running.
-
----
-
-## Monitoring
-
-The app exposes a health endpoint at `/healthz`. It returns `{"status":"ok"}` with HTTP 200 when the app and database are healthy, and 503 if the database can't be reached.
-
-For scheduler monitoring, set `HEALTHCHECK_URL` in your `.env`. The scheduler pings that URL every minute; if the tick stops, your monitor knows. Works with Uptime Kuma (push monitor), Healthchecks.io, or any HTTP endpoint. If `HEALTHCHECK_URL` is blank, the heartbeat is disabled.
+ChoreBoard has a health endpoint at `/healthz` that returns `ok` when the app and database are healthy. For peace of mind that the background scheduler keeps running, set `HEALTHCHECK_URL` in your `.env` — the app pings it every minute, so a monitor like Uptime Kuma or Healthchecks.io can alert you if it ever goes quiet. Leave it blank to skip.
 
 ---
 
-## How it works
+## Good to know
 
-**Single process.** The app runs single-process so the background scheduler fires exactly once. Don't put it behind a multi-worker server.
+- **One process on purpose.** ChoreBoard runs as a single process so the background reminders fire exactly once. Don't put it behind a multi-worker server.
+- **Local network only.** There's no HTTPS built in — run it on your home network.
+- **Your data is yours.** Export everything to a JSON file from Settings any time, and restore from that file just as easily.
 
-**Scheduler.** A minute-interval APScheduler job checks whether to send the morning reminder (if a kid's checklist isn't done by `reminder_time`) and the Sunday 7pm week summary. Everything else — weekly results, activity credit, chore rotation — computes on page load.
+---
 
-**Database.** SQLite in WAL mode. The schema uses non-destructive migrations (`ALTER TABLE ADD COLUMN IF NOT EXISTS`) so updating the app never drops your data.
+## License
 
-**Timezone.** Every date is the local date in `TZ`. The `tzdata` package is a dependency so this works on both Windows and slim containers.
-
-**Chore types.**
-- *Daily* — appear every day; must be checked off each day to count.
-- *Weekly* — appear in the "This week" section; just needs to be done once before Sunday.
-- *Scheduled* — tied to a specific weekday with a countdown (e.g. "trash goes out Monday night").
-- *As-needed* — assigned by a parent from the admin dashboard for that day only.
-- *Rotating* — switches between kids each week automatically.
-
-**Special periods.** Vacation periods pause the program (no chores, no reminders). Activity-credit periods auto-log outdoor minutes for camp, travel, or any other structured program.
-
+MIT — see [LICENSE](LICENSE). Use it, change it, share it.

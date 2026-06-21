@@ -210,6 +210,41 @@ class Scoreboard(unittest.TestCase):
         self.assertEqual(streak, 2)  # paused week skipped, not broken
 
 
+class ChoresOnlyBonus(unittest.TestCase):
+    """With both activities disabled, the bonus is earned by completing the
+    daily checklist on enough days of the week."""
+    def setUp(self):
+        self.conn = fresh_db()
+        logic.set_setting(self.conn, "reading_enabled", "0")
+        logic.set_setting(self.conn, "outdoor_enabled", "0")
+        self.a = kid_id(self.conn, "alex")
+        # Jun22-28 is a fully active (7-day) week in the seed program window.
+        self.week = [date(2026, 6, d) for d in range(22, 29)]
+
+    def _bonus(self):
+        logic.finalize_past_weeks(self.conn, date(2026, 6, 30))
+        return self.conn.execute(
+            "SELECT bonus_earned FROM weekly_results "
+            "WHERE kid_id=? AND week_start_date='2026-06-22'",
+            (self.a,)).fetchone()["bonus_earned"]
+
+    def test_all_days_earns_bonus(self):
+        for d in self.week:
+            complete_checklist(self.conn, self.a, d)
+        self.assertEqual(self._bonus(), 1)
+
+    def test_missing_a_day_misses_bonus_by_default(self):
+        for d in self.week[:-1]:  # 6 of 7 days
+            complete_checklist(self.conn, self.a, d)
+        self.assertEqual(self._bonus(), 0)
+
+    def test_threshold_relaxes_requirement(self):
+        logic.set_setting(self.conn, "checklist_min_days", "5")
+        for d in self.week[:5]:  # exactly 5 days
+            complete_checklist(self.conn, self.a, d)
+        self.assertEqual(self._bonus(), 1)
+
+
 class WeeklyChores(unittest.TestCase):
     def setUp(self):
         self.conn = fresh_db()

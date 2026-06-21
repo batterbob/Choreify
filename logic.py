@@ -507,6 +507,18 @@ def banner_state(conn, kid, d):
 
     ws = week_start(d)
     targets = prorated_targets(conn, kid, ws)
+
+    r_enabled = get_setting(conn, "reading_enabled", "1") != "0"
+    o_enabled = get_setting(conn, "outdoor_enabled", "1") != "0"
+    if not r_enabled and not o_enabled:
+        # Chores-only mode: bonus tracks daily-checklist completion.
+        required = required_checklist_days(conn, targets["active_days"])
+        done, elapsed = checklist_days_this_week(conn, kid["id"], d)
+        if done >= required:
+            return {"state": "earned"}
+        days_left = max(0, targets["active_days"] - elapsed)
+        return {"state": "on_track" if done + days_left >= required else "at_risk"}
+
     r_cur = weekly_reading(conn, kid["id"], ws)
     o_cur = weekly_outdoor(conn, kid["id"], ws)
 
@@ -665,12 +677,31 @@ def finalize_past_weeks(conn, d, env=None):
     conn.commit()
 
 
-def _bonus_earned(conn, r_sum, o_sum, targets):
-    """True when the kid has met all enabled activity targets."""
+def required_checklist_days(conn, active_days):
+    """How many checklist days a chores-only week needs for the bonus.
+
+    Setting `checklist_min_days` blank/0 means "every active day". A configured
+    value is capped at active_days so a short (prorated) week stays achievable.
+    """
+    raw = (get_setting(conn, "checklist_min_days", "") or "").strip()
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        n = 0
+    return active_days if n <= 0 else min(n, active_days)
+
+
+def _bonus_earned(conn, r_sum, o_sum, targets, ck_done=0, ck_active=0):
+    """True when the kid has met the week's bonus condition.
+
+    With activities enabled, that's hitting every enabled activity target. With
+    both activities off (chores-only mode), it's finishing the daily checklist
+    on at least `required_checklist_days` of the week's active days.
+    """
     r_enabled = get_setting(conn, "reading_enabled", "1") != "0"
     o_enabled = get_setting(conn, "outdoor_enabled", "1") != "0"
     if not r_enabled and not o_enabled:
-        return True  # no activities configured → bonus always earned
+        return ck_done >= required_checklist_days(conn, ck_active)
     if r_enabled and r_sum < targets["reading"]:
         return False
     if o_enabled and o_sum < targets["outdoor"]:
@@ -699,7 +730,8 @@ def _finalize_week_for_kid(conn, kid, ws):
             (kid["id"], d2s(ws), r_sum, o_sum, now_iso()))
         return
 
-    bonus = _bonus_earned(conn, r_sum, o_sum, targets)
+    ck_done, ck_active = checklist_days_in_week(conn, kid["id"], ws)
+    bonus = _bonus_earned(conn, r_sum, o_sum, targets, ck_done, ck_active)
     conn.execute(
         "INSERT OR IGNORE INTO weekly_results (kid_id, week_start_date, "
         "reading_minutes, outdoor_minutes, reading_target, outdoor_target, "

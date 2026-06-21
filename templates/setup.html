@@ -14,13 +14,13 @@
   </header>
 
   <section class="card">
-    <p style="margin-bottom:1rem">Let's get your Family Tracker configured. You can change all of these settings later from the admin Settings page.</p>
+    <p style="margin-bottom:1rem">Let's get {{ app_name }} configured. You can change all of these settings later from the admin Settings page.</p>
     <form method="post" action="/setup">
 
       <h3 style="margin-bottom:.5rem">App identity</h3>
       <div class="set-row">
         <label>App name <span class="set-hint">(shown in browser tabs &amp; notifications)</span>
-          <input type="text" name="app_name" value="Family Tracker" class="set-text wide" required>
+          <input type="text" name="app_name" value="ChoreBoard" class="set-text wide" required>
         </label>
       </div>
       <div class="set-row">
@@ -43,8 +43,31 @@
 
       <h3 style="margin-top:1.25rem;margin-bottom:.5rem">Admin password</h3>
       <div class="set-row">
-        <label>Password <span class="set-hint">(leave blank to keep the default: "changeme")</span>
+        <label>Password <span class="set-hint">(leave blank to keep the password from your .env / ADMIN_PASSWORD)</span>
           <input type="password" name="password" class="set-text" autocomplete="new-password">
+        </label>
+        <span class="set-hint">Set a real password here if you haven't configured one in your environment — don't leave the default in place.</span>
+      </div>
+
+      <h3 style="margin-top:1.25rem;margin-bottom:.5rem">Activities &amp; reward</h3>
+      <div class="set-hint" style="margin-bottom:.75rem">Kids can log up to two timed activities (e.g. reading, outdoor time). Turn off both for a chores-only setup — the weekly bonus is then earned by finishing the daily checklist. You can fine-tune targets later in Settings.</div>
+      <div class="set-row">
+        <label style="display:flex;flex-direction:row;gap:.5rem;align-items:center;margin-bottom:.4rem">
+          <input type="checkbox" name="reading_enabled" checked>
+          Activity 1:
+          <input type="text" name="reading_label" value="Reading" class="set-text" placeholder="Reading">
+        </label>
+      </div>
+      <div class="set-row">
+        <label style="display:flex;flex-direction:row;gap:.5rem;align-items:center">
+          <input type="checkbox" name="outdoor_enabled" checked>
+          Activity 2:
+          <input type="text" name="outdoor_label" value="Outdoor Time" class="set-text" placeholder="Outdoor Time">
+        </label>
+      </div>
+      <div class="set-row">
+        <label>Reward for a bonus week <span class="set-hint">(shown on kid pages; blank to hide)</span>
+          <input type="text" name="reward" class="set-text wide" placeholder="e.g. 30 min extra screen time">
         </label>
       </div>
 
